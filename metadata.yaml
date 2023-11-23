@@ -16,5 +16,5 @@ homepage: "https://www.axeptio.eu/en/home"
 documentation: "https://developers.axeptio.eu/v/english/"
 versions:
   # Latest Version
-  - sha: 5aa58e67dc6ed8fcea3639aae131356818fe0b32
+  - sha: 0afcee13404d98748303e2d4e8e1517e2b061ba2
     changeNotes: Initial Version
