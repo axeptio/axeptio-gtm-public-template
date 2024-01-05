@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-homepage: "https://www.axeptio.eu/en/home"
-documentation: "https://developers.axeptio.eu/v/english/"
+homepage: "https://www.axept.io/"
+documentation: "https://support.axeptio.eu/hc/en-gb"
 versions:
   # Latest Version
   - sha: 0afcee13404d98748303e2d4e8e1517e2b061ba2
