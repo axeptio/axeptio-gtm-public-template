@@ -16,8 +16,10 @@ homepage: "https://www.axept.io/"
 documentation: "https://support.axeptio.eu/hc/en-gb"
 versions:
   # Latest version
+  - sha: e60508f04b9e5598f54b26a86efe3d9762d03811
+    changeNotes: handle Consent Mode v2
+  # Older versions
   - sha: 3f4370b3ac183ad860c30a2f76d3ed199e85f6ec
     changeNotes: changed Logo
-  # Older versions
   - sha: 0df6ac6fe94770163b1c5f739a91ca9ae649728c
     changeNotes: Initial Version
