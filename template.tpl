@@ -50,25 +50,45 @@ ___TEMPLATE_PARAMETERS___
     "help": "Enter your Project ID. You can find it in the settings menu of your axeptio project."
   },
   {
+    "type": "TEXT",
+    "name": "cookiesVersion",
+    "displayName": "Cookies Version",
+    "simpleValueType": true,
+    "help": "String identifier of the version of Cookie configuration that should be loaded. If this parameter is omitted, then it\u0027s the \"pages\" property in the configuration that gets parsed in case of multiple cookies configurations."
+  },
+  {
     "type": "GROUP",
-    "name": "advancedSettings",
-    "displayName": "Advanced Axeptio Settings",
+    "name": "cookiesSettings",
+    "displayName": "Cookie settings",
     "groupStyle": "ZIPPY_CLOSED",
     "subParams": [
       {
         "type": "TEXT",
-        "name": "token",
-        "displayName": "Token",
+        "name": "cookiesDuration",
+        "displayName": "User cookies duration (in days)",
         "simpleValueType": true,
-        "help": "user token set by the website (if the user is logged in)."
+        "defaultValue": 365,
+        "valueValidators": [
+          {
+            "type": "NON_NEGATIVE_NUMBER"
+          }
+        ],
+        "help": "Number of days used the cookie holding user\u0027s choices should be active."
+      },
+      {
+        "type": "TEXT",
+        "name": "cookiesDomain",
+        "displayName": "User cookies domain",
+        "simpleValueType": true,
+        "help": "If specified, domain name on which the cookie containing user choices will be available. This allows to request one consent for various subdomains."
       },
       {
         "type": "CHECKBOX",
-        "name": "triggerGTMEvents",
-        "checkboxText": "trigger GTM events",
+        "name": "cookiesSecure",
+        "checkboxText": "User cookies secure",
         "simpleValueType": true,
         "defaultValue": true,
-        "help": "Flag to tell whether GTM Events should be written in the dataLayer variable or not."
+        "help": "Wether or not the cookie holding choices is HTTPS only"
       },
       {
         "type": "TEXT",
@@ -76,81 +96,90 @@ ___TEMPLATE_PARAMETERS___
         "displayName": "dataLayer Name",
         "simpleValueType": true,
         "help": "If you use a custom dataLayer name, you can specify it here, so that Axeptio sends its events to the correct dataLayer"
+      }
+    ]
+  },
+  {
+    "type": "GROUP",
+    "name": "googleSettings",
+    "displayName": "Google Consent Mode v2",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
+        "type": "CHECKBOX",
+        "name": "isComoEnabled",
+        "checkboxText": "Activate Google Consent Mode v2",
+        "simpleValueType": true
       },
       {
-        "type": "TEXT",
-        "name": "mountClassName",
-        "displayName": "Mount class name",
-        "simpleValueType": true,
-        "defaultValue": "axeptio_mount",
-        "help": "ClassName of the \u003cdiv\u003e tag were Axeptio\u0027s WebsiteOverlay will be mounted."
-      },
-      {
-        "type": "TEXT",
-        "name": "apiUrl",
-        "displayName": "api URL",
-        "simpleValueType": true,
-        "defaultValue": "https://api.axept.io/v1",
-        "help": "URL on which the widget will send its POST and GET requests \n for querying and storing consent proofs."
-      },
-      {
-        "type": "GROUP",
-        "name": "cookiesSettings",
-        "displayName": "Cookie settings",
-        "groupStyle": "ZIPPY_OPEN",
-        "subParams": [
+        "type": "PARAM_TABLE",
+        "name": "defaultSettings",
+        "displayName": "Google Consent Mode - Default Settings",
+        "paramTableColumns": [
           {
-            "type": "TEXT",
-            "name": "cookiesVersion",
-            "displayName": "Cookies Version",
-            "simpleValueType": true,
-            "help": "String identifier of the version of Cookie configuration that should be loaded. If this parameter is omitted, then it\u0027s the \"pages\" property in the configuration that gets parsed in case of multiple cookies configurations."
+            "param": {
+              "type": "TEXT",
+              "name": "region",
+              "displayName": "Region",
+              "simpleValueType": true,
+              "help": "(leave blank to have consent apply to all regions)"
+            },
+            "isUnique": true
           },
           {
-            "type": "TEXT",
-            "name": "jsonCookieName",
-            "displayName": "json cookie name",
-            "simpleValueType": true,
-            "defaultValue": "axeptio_cookies",
-            "help": "Name of the cookies containing the JSON value of user choices."
+            "param": {
+              "type": "TEXT",
+              "name": "granted",
+              "displayName": "Granted Consent Types (comma separated)",
+              "simpleValueType": true
+            },
+            "isUnique": false
           },
           {
-            "type": "TEXT",
-            "name": "authorizedVendorsCookieName",
-            "displayName": "Authorized vendors cookie name",
-            "simpleValueType": true,
-            "defaultValue": "axeptio_authorized_vendors",
-            "help": "Name of the cookies that stores authorized vendors (comma-separated string)."
-          },
+            "param": {
+              "type": "TEXT",
+              "name": "denied",
+              "displayName": "Denied Consent Types (comma separated)",
+              "simpleValueType": true
+            },
+            "isUnique": false
+          }
+        ],
+        "enablingConditions": [
           {
-            "type": "TEXT",
-            "name": "cookiesDuration",
-            "displayName": "User cookies duration (in days)",
-            "simpleValueType": true,
-            "defaultValue": 365,
-            "valueValidators": [
-              {
-                "type": "NON_NEGATIVE_NUMBER"
-              }
-            ],
-            "help": "Number of days used the cookie holding user\u0027s choices should be active."
-          },
-          {
-            "type": "TEXT",
-            "name": "cookiesDomain",
-            "displayName": "User cookies domain",
-            "simpleValueType": true,
-            "help": "If specified, domain name on which the cookie containing user choices will be available. This allows to request one consent for various subdomains."
-          },
-          {
-            "type": "CHECKBOX",
-            "name": "cookiesSecure",
-            "checkboxText": "User cookies secure",
-            "simpleValueType": true,
-            "defaultValue": true,
-            "help": "Wether or not the cookie holding choices is HTTPS only"
+            "paramName": "isComoEnabled",
+            "paramValue": true,
+            "type": "EQUALS"
           }
         ]
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "ads_data_redaction",
+        "checkboxText": "Redact Ads Data",
+        "simpleValueType": true,
+        "enablingConditions": [
+          {
+            "paramName": "isComoEnabled",
+            "paramValue": true,
+            "type": "EQUALS"
+          }
+        ],
+        "help": "When ad_storage is denied, new cookies will not be set for advertising purposes. Additionally, third-party cookies previously set on google.com and doubleclick.net will not be used except for spam and fraud purposes. Data sent to Google will still include the full page URL, including any ad click information in the URL parameters."
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "url_passthrough",
+        "checkboxText": "Pass through URL parameters",
+        "simpleValueType": true,
+        "enablingConditions": [
+          {
+            "paramName": "isComoEnabled",
+            "paramValue": true,
+            "type": "EQUALS"
+          }
+        ],
+        "help": "When a user lands on your website after clicking an ad, information about the ad may be appended to your landing page URLs as a query parameter. In order to improve conversion accuracy, this information is usually stored in first-party cookies on your domain.  However, if ad_storage is set to denied, this information will not be stored locally. To improve ad click measurement quality when ad_storage is denied, you can optionally elect to pass information about ad clicks through URL parameters across pages using URL passthrough.  Similarly, if analytics_storage is set to denied, URL passthrough can be used to send event and session-based analytics (including conversions) without cookies across pages."
       }
     ]
   }
@@ -161,25 +190,67 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 
 // Enter your template code here.
 const logToConsole = require('logToConsole');
+const setDefaultConsentState = require('setDefaultConsentState');
+const gtagSet = require('gtagSet');
 const queryPermission = require('queryPermission');
-const encodeUriComponent = require('encodeUriComponent');
 const injectScript = require('injectScript');
 const setInWindow = require('setInWindow');
 const makeNumber = require('makeNumber');
 
+if(data.isComoEnabled){
+  
+  const splitInput = (input) => {
+  return input.split(',')
+      .map(entry => entry.trim())
+      .filter(entry => entry.length !== 0);
+};
+
+const parseCommandData = (settings) => {
+  const regions = splitInput(settings.region);
+  const granted = splitInput(settings.granted);
+  const denied = splitInput(settings.denied);
+  const commandData = {};
+  if (regions.length > 0) {
+    commandData.region = regions;
+  }
+  granted.forEach(entry => {
+    commandData[entry] = 'granted';
+  });
+  denied.forEach(entry => {
+    commandData[entry] = 'denied';
+  });
+  return commandData;
+};
+
+const main = (data) => {
+  /*
+   * Optional settings using gtagSet
+   */
+  gtagSet('ads_data_redaction', data.ads_data_redaction);
+  gtagSet('url_passthrough', data.url_passthrough);
+  gtagSet('developer_id.dNGFkYj', true);
+  // Set default consent state(s)
+  data.defaultSettings.forEach(settings => {
+    const defaultData = parseCommandData(settings);
+    logToConsole(defaultData);
+  // wait_for_update (ms) allows for time to receive visitor choices from the CMP
+    defaultData.wait_for_update = 500;
+    setDefaultConsentState(defaultData);
+  });
+};
+
+main(data);
+
+}
+
 setInWindow('axeptioSettings', 
 {clientId: data.id,
-token: data.token,
 cookiesVersion: data.cookiesVersion,
-triggerGTMEvents: data.triggerGTMEvents,
 dataLayerName: data.dataLayerName,
-jsonCookieName: data.jsonCookieName,
-authorizedVendorsCookieName: data.authorizedVendorsCookieName,
 userCookiesDuration: makeNumber(data.cookiesDuration),
 userCookiesDomain: data.cookiesDomain,
 userCookiesSecure: data.cookiesSecure,
-mountClassName: data.mountClassName,
-apiUrl: data.apiUrl},
+},
 true);
 
 
@@ -317,6 +388,217 @@ ___WEB_PERMISSIONS___
                   {
                     "type": 8,
                     "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "write_data_layer",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "keyPatterns",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 1,
+                "string": "ads_data_redaction"
+              },
+              {
+                "type": 1,
+                "string": "url_passthrough"
+              },
+              {
+                "type": 1,
+                "string": "developer_id.dNGFkYj"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "access_consent",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "consentTypes",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "ad_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "analytics_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "ad_user_data"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "ad_personalization"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "wait_for_update"
                   },
                   {
                     "type": 8,
