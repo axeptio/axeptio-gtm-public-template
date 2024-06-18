@@ -3,48 +3,52 @@
 ![Axeptio Logo](/assets/logo-axeptio.svg)
 https://axept.io
 
-Ce tag permet d'ajouter le SDK Axeptio dans votre conteneur Google Tag Manager.
+This tag allows you to add the Axeptio SDK to your Google Tag Manager container.
 
-Vous configurez : 
-- Votre project ID
-- Votre CookieVersion
+You configure:
+- Your Project ID
+- Your CookieVersion
 
-En utilisant les variables, vous pouvez rendre dynamique la CookieVersion en fonction d'une variable du dataLayer, du Hostname ou autre.
+By using variables, you can dynamically set the CookieVersion based on a dataLayer variable, the Hostname, or other parameters.
 
 ## Axeptio Settings
 
-Vous pouvez personnaliser les settings Axeptio
+You can customize the Axeptio settings:
 
-- Durée de vie du cookie
-- Domaine du cookie
-- Nom du dataLayer
-- Url de transport (Server Side Tracking)
+- Cookie lifespan
+- Cookie domain
+- DataLayer name
+- Transport URL (Server Side Tracking)
 
 ## Consent Mode V2
 
-Le template Axeptio CMP permet de configurer le Google Consent Mode V2 avec la valeur par defaut.
+The Axeptio CMP template allows you to configure Google Consent Mode V2 with the default value.
 
-Vous pouvez choisir la région ou laissez vide pour mettre ALL
+You can choose the region or leave it blank to set it to ALL.
 
-Dans les champs granted et denied, ajoutez les purposes
+In the granted and denied fields, add the purposes:
 
 - analytics_storage
 - ad_storage
 - ad_user_data
 - ad_personalization
 
-Exemple dans denied : analytics_storage,ad_storage,ad_user_data,ad_personalization
+Example : analytics_storage, ad_storage, ad_user_data, ad_personalization
 
-## Setup
+## Axeptio Setup
 
-- Ajoutez depuis la gallerie le template : https://tagmanager.google.com/gallery/#/owners/axeptio/templates/axeptio-gtm-public-template
-- Dans la section Tags, ajoutez la balise Axeptio
-- Configurez votre projetId et CookieVersion
-- Configurez les AxeptioSettings
-- Ajouter le trigger : Consent Initialisation
-- Publiez votre projet, le widget est installé.
+- Add the template from the gallery: [Axeptio GTM Public Template](https://tagmanager.google.com/gallery/#/owners/axeptio/templates/axeptio-gtm-public-template)
+- In the Tags section, add the Axeptio tag
+- Configure your projectId and CookieVersion
+- Configure the AxeptioSettings
+- Add the trigger: Consent Initialization
+- Publish your project, the widget is installed.
 
 ## Support
 
-Si vous rencontrez des problématiques lors de l'installation de notre balise Google Tag Manager, vous pouvez envoyer un email sur : help@axeptio.eu
+If you encounter any issues during the installation of our Google Tag Manager tag, you can send an email to: help@axeptio.eu
+
+- [English support](https://support.axeptio.eu/hc/en-gb)
+
+- [French support](https://support.axeptio.eu/hc/fr)
 
