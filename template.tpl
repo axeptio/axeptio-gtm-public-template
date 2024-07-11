@@ -101,6 +101,31 @@ ___TEMPLATE_PARAMETERS___
   },
   {
     "type": "GROUP",
+    "name": "serverSide",
+    "displayName": "Server-side",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
+        "type": "TEXT",
+        "name": "apiUrl",
+        "displayName": "Server-side URL",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "REGEX",
+            "args": [
+              "^(http(s):\\/\\/.)[-a-zA-Z0-9@:%._\\+~#\u003d]{2,256}\\.[a-z]{2,6}\\b([-a-zA-Z0-9@:%_\\+.~#?\u0026//\u003d]*)$"
+            ],
+            "enablingConditions": [],
+            "errorMessage": "Invalid URL"
+          }
+        ],
+        "help": "Your server-side container\u0027s URL"
+      }
+    ]
+  },
+  {
+    "type": "GROUP",
     "name": "googleSettings",
     "displayName": "Google Consent Mode v2",
     "groupStyle": "ZIPPY_CLOSED",
@@ -250,6 +275,7 @@ dataLayerName: data.dataLayerName,
 userCookiesDuration: makeNumber(data.cookiesDuration),
 userCookiesDomain: data.cookiesDomain,
 userCookiesSecure: data.cookiesSecure,
+apiUrl: data.apiUrl,
 },
 true);
 
