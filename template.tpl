@@ -1,19 +1,11 @@
-﻿___TERMS_OF_SERVICE___
-
-By creating or modifying this file you agree to Google Tag Manager's Community
-Template Gallery Developer Terms of Service available at
-https://developers.google.com/tag-manager/gallery-tos (or such other URL as
-Google may provide), as modified from time to time.
-
-
-___INFO___
+﻿___INFO___
 
 {
   "type": "TAG",
   "id": "cvt_temp_public_id",
   "version": 1,
   "securityGroups": [],
-  "displayName": "Axeptio CMP",
+  "displayName": "Copy of Axeptio CMP",
   "brand": {
     "id": "github.com_axeptio",
     "displayName": "axeptio",
@@ -96,6 +88,29 @@ ___TEMPLATE_PARAMETERS___
         "displayName": "dataLayer Name",
         "simpleValueType": true,
         "help": "If you use a custom dataLayer name, you can specify it here, so that Axeptio sends its events to the correct dataLayer"
+      },
+      {
+        "type": "SELECT",
+        "name": "triggerGTMEvents",
+        "displayName": "Trigger GTM Events",
+        "macrosInSelect": false,
+        "selectItems": [
+          {
+            "value": true,
+            "displayValue": "True"
+          },
+          {
+            "value": false,
+            "displayValue": "False"
+          },
+          {
+            "value": "update_only",
+            "displayValue": "Update only"
+          }
+        ],
+        "simpleValueType": true,
+        "defaultValue": true,
+        "help": "Enables or disables Axeptio events that are sent in the GTM Datalayer. If you select \"Update Only\", it will only fire the \"axeptio_update\" event."
       }
     ]
   },
@@ -153,18 +168,80 @@ ___TEMPLATE_PARAMETERS___
           },
           {
             "param": {
-              "type": "TEXT",
-              "name": "granted",
-              "displayName": "Granted Consent Types (comma separated)",
+              "type": "SELECT",
+              "name": "analytics_storage",
+              "displayName": "Analytics storage",
+              "macrosInSelect": false,
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                }
+              ],
               "simpleValueType": true
             },
             "isUnique": false
           },
           {
             "param": {
-              "type": "TEXT",
-              "name": "denied",
-              "displayName": "Denied Consent Types (comma separated)",
+              "type": "SELECT",
+              "name": "ad_storage",
+              "displayName": "Ad storage",
+              "macrosInSelect": false,
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                }
+              ],
+              "simpleValueType": true
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "ad_user_data",
+              "displayName": "Ad user data",
+              "macrosInSelect": false,
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                }
+              ],
+              "simpleValueType": true
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "ad_personalization",
+              "displayName": "Ad personalization",
+              "macrosInSelect": false,
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                }
+              ],
               "simpleValueType": true
             },
             "isUnique": false
@@ -231,19 +308,18 @@ if(data.isComoEnabled){
 };
 
 const parseCommandData = (settings) => {
-  const regions = splitInput(settings.region);
-  const granted = splitInput(settings.granted);
-  const denied = splitInput(settings.denied);
   const commandData = {};
-  if (regions.length > 0) {
-    commandData.region = regions;
+  for(const key in settings){
+    if(key === "region"){
+      const regions = splitInput(settings[key]);
+      if (regions.length > 0) {
+        commandData.region = regions;
+      }
+    }
+    else{
+      commandData[key] = settings[key];
+    }
   }
-  granted.forEach(entry => {
-    commandData[entry] = 'granted';
-  });
-  denied.forEach(entry => {
-    commandData[entry] = 'denied';
-  });
   return commandData;
 };
 
@@ -257,7 +333,6 @@ const main = (data) => {
   // Set default consent state(s)
   data.defaultSettings.forEach(settings => {
     const defaultData = parseCommandData(settings);
-    logToConsole(defaultData);
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
     defaultData.wait_for_update = 500;
     setDefaultConsentState(defaultData);
@@ -276,6 +351,7 @@ userCookiesDuration: makeNumber(data.cookiesDuration),
 userCookiesDomain: data.cookiesDomain,
 userCookiesSecure: data.cookiesSecure,
 apiUrl: data.apiUrl,
+triggerGTMEvents: data.triggerGTMEvents,
 },
 true);
 
@@ -306,6 +382,9 @@ ___WEB_PERMISSIONS___
           }
         }
       ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
     },
     "isRequired": true
   },
