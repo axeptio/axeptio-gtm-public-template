@@ -5,7 +5,7 @@
   "id": "cvt_temp_public_id",
   "version": 1,
   "securityGroups": [],
-  "displayName": "Copy of Axeptio CMP",
+  "displayName": "Axeptio CMP",
   "brand": {
     "id": "github.com_axeptio",
     "displayName": "axeptio",
