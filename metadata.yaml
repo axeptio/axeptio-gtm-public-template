@@ -16,9 +16,11 @@ homepage: "https://www.axept.io/"
 documentation: "https://support.axeptio.eu/hc/en-gb"
 versions:
   # Latest version
+  - sha: eec2376aa80849314a82f4fcd0bb8eafcaf22e2f
+    changeNotes: quick fixes
+  # Older versions
   - sha: 95363b21ff529ffae9d72239967d87e18ffcf6f6
     changeNotes: added dropdown fields for Consent Mode v2 parameters, and new options for triggerGTMEvents
-  # Older versions
   - sha: 404a04af204319846cad7ec38e552af2009a3ab7
     changeNotes: added server-side option
   - sha: e60508f04b9e5598f54b26a86efe3d9762d03811
