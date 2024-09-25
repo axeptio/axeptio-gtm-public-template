@@ -16,7 +16,7 @@ homepage: "https://www.axept.io/"
 documentation: "https://support.axeptio.eu/hc/en-gb"
 versions:
   # Latest version
-  - sha: ec8765dd1190d3a8564ccc60a6efc5085624c65b
+  - sha: e098afab175675b8a3ad2f7650d464c2193d3f49
     changeNotes: renamed api Url for server-side
   # Older versions
   - sha: eec2376aa80849314a82f4fcd0bb8eafcaf22e2f
