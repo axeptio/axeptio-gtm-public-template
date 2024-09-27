@@ -1,4 +1,12 @@
-﻿___INFO___
+﻿___TERMS_OF_SERVICE___
+
+By creating or modifying this file you agree to Google Tag Manager's Community
+Template Gallery Developer Terms of Service available at
+https://developers.google.com/tag-manager/gallery-tos (or such other URL as
+Google may provide), as modified from time to time.
+
+
+___INFO___
 
 {
   "type": "TAG",
@@ -357,8 +365,8 @@ true);
 
 
 
-if (queryPermission('inject_script', 'https://static.axept.io/sdk.js')) {
-  injectScript('https://static.axept.io/sdk.js', data.gtmOnSuccess, data.gtmOnFailure);
+if (queryPermission('inject_script', 'https://static.axept.io/sdk-xslim.js')) {
+  injectScript('https://static.axept.io/sdk-xslim.js', data.gtmOnSuccess, data.gtmOnFailure);
 } else {
   data.gtmOnFailure();
 }
@@ -402,7 +410,7 @@ ___WEB_PERMISSIONS___
             "listItem": [
               {
                 "type": 1,
-                "string": "https://static.axept.io/sdk.js"
+                "string": "https://static.axept.io/sdk-xslim.js"
               }
             ]
           }
