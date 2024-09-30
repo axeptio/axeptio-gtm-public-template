@@ -365,8 +365,8 @@ true);
 
 
 
-if (queryPermission('inject_script', 'https://static.axept.io/sdk-xslim.js')) {
-  injectScript('https://static.axept.io/sdk-xslim.js', data.gtmOnSuccess, data.gtmOnFailure);
+if (queryPermission('inject_script', 'https://static.axept.io/sdk.js')) {
+  injectScript('https://static.axept.io/sdk.js', data.gtmOnSuccess, data.gtmOnFailure);
 } else {
   data.gtmOnFailure();
 }
@@ -410,7 +410,7 @@ ___WEB_PERMISSIONS___
             "listItem": [
               {
                 "type": 1,
-                "string": "https://static.axept.io/sdk-xslim.js"
+                "string": "https://static.axept.io/sdk.js"
               }
             ]
           }
