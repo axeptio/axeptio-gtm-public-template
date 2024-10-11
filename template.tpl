@@ -179,7 +179,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "analytics_storage",
               "displayName": "Analytics storage",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -190,7 +189,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           },
@@ -199,7 +199,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "ad_storage",
               "displayName": "Ad storage",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -210,7 +209,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           },
@@ -219,7 +219,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "ad_user_data",
               "displayName": "Ad user data",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -230,7 +229,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           },
@@ -239,7 +239,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "ad_personalization",
               "displayName": "Ad personalization",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -250,7 +249,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           }
