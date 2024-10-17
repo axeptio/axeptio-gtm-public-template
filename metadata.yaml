@@ -16,9 +16,11 @@ homepage: "https://www.axept.io/"
 documentation: "https://support.axeptio.eu/hc/en-gb"
 versions:
   # Latest version
+  - sha: 050d2151c695c5082189a2e77c7a448052c93d0b
+    changeNotes: added platform tag
+  # Older versions
   - sha: b53976f3f3dca5128cd38c9a6fefd10611ef7d2c
     changeNotes: default values for Consent Mode v2 when unset
-  # Older versions
   - sha: 05d47919fb3ee27a82b89fb205b3ee4ee20ef6e1
     changeNotes: changed how Consent Mode v2 Default values are set
   - sha: e098afab175675b8a3ad2f7650d464c2193d3f49
