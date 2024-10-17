@@ -360,6 +360,7 @@ userCookiesDomain: data.cookiesDomain,
 userCookiesSecure: data.cookiesSecure,
 postConsentUrl: data.postConsentUrl,
 triggerGTMEvents: data.triggerGTMEvents,
+platform: 'tms-gtm',
 },
 true);
 
