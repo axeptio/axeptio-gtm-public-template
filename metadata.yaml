@@ -13,12 +13,14 @@
 # limitations under the License.
 
 homepage: "https://www.axept.io/"
-documentation: "https://support.axeptio.eu/hc/en-gb"
+documentation: "https://support.axeptio.eu/en/"
 versions:
   # Latest version
+  - sha: bfa04e5dcc4df419ab4ffec2e4550e2c0a584b5c
+    changeNotes: changed cookie duration default value to 180 days
+  # Older versions
   - sha: 050d2151c695c5082189a2e77c7a448052c93d0b
     changeNotes: added platform tag
-  # Older versions
   - sha: b53976f3f3dca5128cd38c9a6fefd10611ef7d2c
     changeNotes: default values for Consent Mode v2 when unset
   - sha: 05d47919fb3ee27a82b89fb205b3ee4ee20ef6e1
