@@ -10,9 +10,8 @@ ___INFO___
 
 {
   "type": "TAG",
-  "id": "cvt_temp_public_id",
+  "id": "cvt_5TPRD",
   "version": 1,
-  "securityGroups": [],
   "displayName": "Axeptio CMP",
   "brand": {
     "id": "github.com_axeptio",
@@ -22,7 +21,8 @@ ___INFO___
   "description": "Template for Axeptio cookie gestion",
   "containerContexts": [
     "WEB"
-  ]
+  ],
+  "securityGroups": []
 }
 
 
@@ -67,7 +67,7 @@ ___TEMPLATE_PARAMETERS___
         "name": "cookiesDuration",
         "displayName": "User cookies duration (in days)",
         "simpleValueType": true,
-        "defaultValue": 365,
+        "defaultValue": 180,
         "valueValidators": [
           {
             "type": "NON_NEGATIVE_NUMBER"
