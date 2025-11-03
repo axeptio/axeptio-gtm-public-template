@@ -292,6 +292,38 @@ ___TEMPLATE_PARAMETERS___
         "help": "When a user lands on your website after clicking an ad, information about the ad may be appended to your landing page URLs as a query parameter. In order to improve conversion accuracy, this information is usually stored in first-party cookies on your domain.  However, if ad_storage is set to denied, this information will not be stored locally. To improve ad click measurement quality when ad_storage is denied, you can optionally elect to pass information about ad clicks through URL parameters across pages using URL passthrough.  Similarly, if analytics_storage is set to denied, URL passthrough can be used to send event and session-based analytics (including conversions) without cookies across pages."
       }
     ]
+  },
+  {
+    "type": "GROUP",
+    "name": "additionalSettingsGroup",
+    "displayName": "Additional Axeptio Settings",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
+        "type": "SIMPLE_TABLE",
+        "name": "axeptioAdditionalSettings",
+        "displayName": "Additional Axeptio Settings",
+        "simpleTableColumns": [
+          {
+            "type": "TEXT",
+            "name": "key",
+            "displayName": "Key",
+            "simpleValueType": true,
+            "help": "Name of the Axeptio setting to override or extend.",
+            "isUnique": true
+          },
+          {
+            "type": "TEXT",
+            "name": "value",
+            "displayName": "Value",
+            "simpleValueType": true,
+            "help": "Value assigned to the setting.",
+            "isUnique": false
+          }
+        ],
+        "help": "Here you can add additional settings from our SDK. You can find the full documentationt here : https://support.axeptio.eu/en/articles/274040-advanced-options-and-mode-axeptiosettings"
+      }
+    ]
   }
 ]
 
@@ -351,20 +383,33 @@ main(data);
 
 }
 
-setInWindow('axeptioSettings', 
-{clientId: data.id,
-cookiesVersion: data.cookiesVersion,
-dataLayerName: data.dataLayerName,
-userCookiesDuration: makeNumber(data.cookiesDuration),
-userCookiesDomain: data.cookiesDomain,
-userCookiesSecure: data.cookiesSecure,
-postConsentUrl: data.postConsentUrl,
-triggerGTMEvents: data.triggerGTMEvents,
-platform: 'tms-gtm',
-},
-true);
+const axeptioSettings = {
+  clientId: data.id,
+  cookiesVersion: data.cookiesVersion,
+  dataLayerName: data.dataLayerName,
+  userCookiesDuration: makeNumber(data.cookiesDuration),
+  userCookiesDomain: data.cookiesDomain,
+  userCookiesSecure: data.cookiesSecure,
+  postConsentUrl: data.postConsentUrl,
+  triggerGTMEvents: data.triggerGTMEvents,
+  platform: 'tms-gtm'
+};
 
-
+const additionalSettings = data.axeptioAdditionalSettings || data.additionalSettings;
+if (additionalSettings && typeof additionalSettings.length === 'number') {
+  for (let index = 0; index < additionalSettings.length; index += 1) {
+    const entry = additionalSettings[index];
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const key = typeof entry.key === 'string' ? entry.key.trim() : entry.key;
+    if (!key) {
+      continue;
+    }
+    axeptioSettings[key] = entry.value;
+  }
+}
+setInWindow('axeptioSettings', axeptioSettings, true);
 
 if (queryPermission('inject_script', 'https://static.axept.io/sdk.js')) {
   injectScript('https://static.axept.io/sdk.js', data.gtmOnSuccess, data.gtmOnFailure);
