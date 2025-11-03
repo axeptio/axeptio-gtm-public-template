@@ -16,9 +16,11 @@ homepage: "https://www.axept.io/"
 documentation: "https://support.axeptio.eu/en/"
 versions:
   # Latest version
+  - sha: 0bb07da989ff1745af7c8982f765536ef5201d76
+    changeNotes: added additional Axeptio settings table
+  # Older versions
   - sha: bfa04e5dcc4df419ab4ffec2e4550e2c0a584b5c
     changeNotes: changed cookie duration default value to 180 days
-  # Older versions
   - sha: 050d2151c695c5082189a2e77c7a448052c93d0b
     changeNotes: added platform tag
   - sha: b53976f3f3dca5128cd38c9a6fefd10611ef7d2c
