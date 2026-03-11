@@ -43,9 +43,12 @@ With **Google Consent Mode V2**, you can set the following purposes:
 - **ad_storage**: Manages the consent for advertising cookies.
 - **ad_user_data**: Defines consent for user data related to advertising.
 - **ad_personalization**: Configures consent for personalized advertising cookies.
+- **functionality_storage**: Enables storage that supports site functionality (for example, language settings).
+- **personalization_storage**: Enables storage related to personalization (for example, content or video recommendations).
+- **security_storage**: Enables storage related to security (for example, authentication and fraud prevention).
 
 You can define multiple purposes in the granted and denied fields in this format:
-`analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`.mnb.
+`analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`, `functionality_storage`, `personalization_storage`, `security_storage`.
 
 ###  Region Selection
 You have the option to select the **region** where you want to apply the consent settings. If left blank, it will apply to all regions by default.

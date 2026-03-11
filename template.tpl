@@ -1,4 +1,4 @@
-﻿___TERMS_OF_SERVICE___
+___TERMS_OF_SERVICE___
 
 By creating or modifying this file you agree to Google Tag Manager's Community
 Template Gallery Developer Terms of Service available at
@@ -178,7 +178,7 @@ ___TEMPLATE_PARAMETERS___
             "param": {
               "type": "SELECT",
               "name": "analytics_storage",
-              "displayName": "Analytics storage",
+              "displayName": "Analytics",
               "selectItems": [
                 {
                   "value": "denied",
@@ -190,7 +190,8 @@ ___TEMPLATE_PARAMETERS___
                 }
               ],
               "simpleValueType": true,
-              "defaultValue": "denied"
+              "defaultValue": "denied",
+              "help": "analytics_storage: Enables storage, such as cookies (web) or device identifiers (apps), related to analytics, for example, visit duration."
             },
             "isUnique": false
           },
@@ -198,7 +199,7 @@ ___TEMPLATE_PARAMETERS___
             "param": {
               "type": "SELECT",
               "name": "ad_storage",
-              "displayName": "Ad storage",
+              "displayName": "Ads",
               "selectItems": [
                 {
                   "value": "denied",
@@ -210,7 +211,8 @@ ___TEMPLATE_PARAMETERS___
                 }
               ],
               "simpleValueType": true,
-              "defaultValue": "denied"
+              "defaultValue": "denied",
+              "help": "ad_storage: Enables storage, such as cookies (web) or device identifiers (apps), related to advertising."
             },
             "isUnique": false
           },
@@ -218,7 +220,7 @@ ___TEMPLATE_PARAMETERS___
             "param": {
               "type": "SELECT",
               "name": "ad_user_data",
-              "displayName": "Ad user data",
+              "displayName": "Ad user",
               "selectItems": [
                 {
                   "value": "denied",
@@ -230,7 +232,8 @@ ___TEMPLATE_PARAMETERS___
                 }
               ],
               "simpleValueType": true,
-              "defaultValue": "denied"
+              "defaultValue": "denied",
+              "help": "ad_user_data: Sets consent for sending user data to Google for online advertising purposes."
             },
             "isUnique": false
           },
@@ -238,7 +241,7 @@ ___TEMPLATE_PARAMETERS___
             "param": {
               "type": "SELECT",
               "name": "ad_personalization",
-              "displayName": "Ad personalization",
+              "displayName": "Ad perso.",
               "selectItems": [
                 {
                   "value": "denied",
@@ -250,7 +253,71 @@ ___TEMPLATE_PARAMETERS___
                 }
               ],
               "simpleValueType": true,
-              "defaultValue": "denied"
+              "defaultValue": "denied",
+              "help": "ad_personalization: Sets consent for personalized advertising."
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "functionality_storage",
+              "displayName": "Functionality",
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                }
+              ],
+              "simpleValueType": true,
+              "defaultValue": "denied",
+              "help": "functionality_storage: Enables storage that supports the functionality of the website or app, for example, language settings."
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "personalization_storage",
+              "displayName": "Perso.",
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                }
+              ],
+              "simpleValueType": true,
+              "defaultValue": "denied",
+              "help": "personalization_storage: Enables storage related to personalization, for example, video recommendations."
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "security_storage",
+              "displayName": "Security",
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                }
+              ],
+              "simpleValueType": true,
+              "defaultValue": "denied",
+              "help": "security_storage: Enables storage related to security such as authentication functionality, fraud prevention, and other user protection."
             },
             "isUnique": false
           }
@@ -727,6 +794,99 @@ ___WEB_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "ad_personalization"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "functionality_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "personalization_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "security_storage"
                   },
                   {
                     "type": 8,
