@@ -342,6 +342,7 @@ const queryPermission = require('queryPermission');
 const injectScript = require('injectScript');
 const setInWindow = require('setInWindow');
 const makeNumber = require('makeNumber');
+const decodeUriComponent = require('decodeUriComponent');
 
 if(data.isComoEnabled){
   
@@ -375,6 +376,7 @@ const main = (data) => {
   gtagSet('url_passthrough', data.url_passthrough);
   gtagSet('developer_id.dNGFkYj', true);
   // Set default consent state(s)
+  logToConsole('Axeptio GTM tag: applying default consent state');
   data.defaultSettings.forEach(settings => {
     const defaultData = parseCommandData(settings);
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
@@ -383,11 +385,18 @@ const main = (data) => {
   });
 
   // Early consent update from Axeptio cookie (runs before SDK loads)
-  const cookieName = data.consentCookieName || ('axeptio_cookies_' + (data.id || ''));
+  // Default cookie name used by Axeptio is "axeptio_cookies"
+  // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
+  const cookieName = data.consentCookieName || 'axeptio_cookies';
   if (cookieName) {
     const cookieValues = getCookieValues(cookieName);
     if (cookieValues && cookieValues.length > 0) {
-      const parsed = JSON.parse(cookieValues[0]);
+      let raw = cookieValues[0];
+      let parsed = JSON.parse(raw);
+      if (parsed === undefined) {
+        const decoded = decodeUriComponent(raw);
+        parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
+      }
       if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
         const gcm = parsed['$$googleConsentMode'];
         const consentModeStates = {};
@@ -398,6 +407,7 @@ const main = (data) => {
           }
         }
         if (Object.keys(consentModeStates).length > 0) {
+          logToConsole('Axeptio GTM tag: early consent update from cookie');
           updateConsentState(consentModeStates);
         }
       }
@@ -794,6 +804,39 @@ ___WEB_PERMISSIONS___
                     "boolean": true
                   }
                 ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "get_cookies",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "cookieAccess",
+          "value": {
+            "type": 1,
+            "string": "specific"
+          }
+        },
+        {
+          "key": "cookieNames",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 1,
+                "string": "axeptio_cookies"
               }
             ]
           }
