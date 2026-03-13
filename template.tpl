@@ -1,4 +1,4 @@
-﻿___TERMS_OF_SERVICE___
+___TERMS_OF_SERVICE___
 
 By creating or modifying this file you agree to Google Tag Manager's Community
 Template Gallery Developer Terms of Service available at
@@ -333,7 +333,11 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 // Enter your template code here.
 const logToConsole = require('logToConsole');
 const setDefaultConsentState = require('setDefaultConsentState');
+const updateConsentState = require('updateConsentState');
 const gtagSet = require('gtagSet');
+const getCookieValues = require('getCookieValues');
+const JSON = require('JSON');
+const Object = require('Object');
 const queryPermission = require('queryPermission');
 const injectScript = require('injectScript');
 const setInWindow = require('setInWindow');
@@ -377,6 +381,28 @@ const main = (data) => {
     defaultData.wait_for_update = 500;
     setDefaultConsentState(defaultData);
   });
+
+  // Early consent update from Axeptio cookie (runs before SDK loads)
+  const cookieName = data.consentCookieName || ('axeptio_cookies_' + (data.id || ''));
+  if (cookieName) {
+    const cookieValues = getCookieValues(cookieName);
+    if (cookieValues && cookieValues.length > 0) {
+      const parsed = JSON.parse(cookieValues[0]);
+      if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
+        const gcm = parsed['$$googleConsentMode'];
+        const consentModeStates = {};
+        for (const key in gcm) {
+          const val = gcm[key];
+          if (val === 'granted' || val === 'denied') {
+            consentModeStates[key] = val;
+          }
+        }
+        if (Object.keys(consentModeStates).length > 0) {
+          updateConsentState(consentModeStates);
+        }
+      }
+    }
+  }
 };
 
 main(data);
