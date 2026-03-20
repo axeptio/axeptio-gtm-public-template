@@ -13,12 +13,22 @@
 # limitations under the License.
 
 homepage: "https://www.axept.io/"
-documentation: "https://support.axeptio.eu/hc/en-gb"
+documentation: "https://support.axeptio.eu/en/"
 versions:
   # Latest version
+  - sha: de7d1fc09db4d412b865deb068ae0a8ac9475d0d
+    changeNotes: added "Enable early consent update" dropdown and gated early consent update from the Axeptio cookie; passes `axeptioSettings.updateConsentStateEarly` to the dev SDK
+  - sha: 0bb07da989ff1745af7c8982f765536ef5201d76
+    changeNotes: added additional Axeptio settings table
+  # Older versions
+  - sha: bfa04e5dcc4df419ab4ffec2e4550e2c0a584b5c
+    changeNotes: changed cookie duration default value to 180 days
+  - sha: 050d2151c695c5082189a2e77c7a448052c93d0b
+    changeNotes: added platform tag
+  - sha: b53976f3f3dca5128cd38c9a6fefd10611ef7d2c
+    changeNotes: default values for Consent Mode v2 when unset
   - sha: 05d47919fb3ee27a82b89fb205b3ee4ee20ef6e1
     changeNotes: changed how Consent Mode v2 Default values are set
-  # Older versions
   - sha: e098afab175675b8a3ad2f7650d464c2193d3f49
     changeNotes: renamed api Url for server-side
   - sha: eec2376aa80849314a82f4fcd0bb8eafcaf22e2f

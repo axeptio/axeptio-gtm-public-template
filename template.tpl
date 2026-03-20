@@ -1,4 +1,4 @@
-﻿___TERMS_OF_SERVICE___
+___TERMS_OF_SERVICE___
 
 By creating or modifying this file you agree to Google Tag Manager's Community
 Template Gallery Developer Terms of Service available at
@@ -10,9 +10,8 @@ ___INFO___
 
 {
   "type": "TAG",
-  "id": "cvt_temp_public_id",
+  "id": "cvt_5TPRD",
   "version": 1,
-  "securityGroups": [],
   "displayName": "Axeptio CMP",
   "brand": {
     "id": "github.com_axeptio",
@@ -22,7 +21,8 @@ ___INFO___
   "description": "Template for Axeptio cookie gestion",
   "containerContexts": [
     "WEB"
-  ]
+  ],
+  "securityGroups": []
 }
 
 
@@ -67,7 +67,7 @@ ___TEMPLATE_PARAMETERS___
         "name": "cookiesDuration",
         "displayName": "User cookies duration (in days)",
         "simpleValueType": true,
-        "defaultValue": 365,
+        "defaultValue": 180,
         "valueValidators": [
           {
             "type": "NON_NEGATIVE_NUMBER"
@@ -89,6 +89,25 @@ ___TEMPLATE_PARAMETERS___
         "simpleValueType": true,
         "defaultValue": true,
         "help": "Wether or not the cookie holding choices is HTTPS only"
+      },
+      {
+        "type": "SELECT",
+        "name": "updateConsentStateEarly",
+        "displayName": "Enable early consent update",
+        "macrosInSelect": false,
+        "selectItems": [
+          {
+            "value": false,
+            "displayValue": "False - updated by SDK"
+          },
+          {
+            "value": true,
+            "displayValue": "True - early update attempt by template"
+          }
+        ],
+        "simpleValueType": true,
+        "defaultValue": false,
+        "help": "When false, consent updates are applied entirely by the Axeptio SDK. When true, the template attempts an early consent update from the Axeptio cookie, which may happen faster for returning visitors"
       },
       {
         "type": "TEXT",
@@ -179,7 +198,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "analytics_storage",
               "displayName": "Analytics storage",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -190,7 +208,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           },
@@ -199,7 +218,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "ad_storage",
               "displayName": "Ad storage",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -210,7 +228,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           },
@@ -219,7 +238,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "ad_user_data",
               "displayName": "Ad user data",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -230,7 +248,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           },
@@ -239,7 +258,6 @@ ___TEMPLATE_PARAMETERS___
               "type": "SELECT",
               "name": "ad_personalization",
               "displayName": "Ad personalization",
-              "macrosInSelect": false,
               "selectItems": [
                 {
                   "value": "denied",
@@ -250,7 +268,8 @@ ___TEMPLATE_PARAMETERS___
                   "displayValue": "Granted"
                 }
               ],
-              "simpleValueType": true
+              "simpleValueType": true,
+              "defaultValue": "denied"
             },
             "isUnique": false
           }
@@ -292,6 +311,38 @@ ___TEMPLATE_PARAMETERS___
         "help": "When a user lands on your website after clicking an ad, information about the ad may be appended to your landing page URLs as a query parameter. In order to improve conversion accuracy, this information is usually stored in first-party cookies on your domain.  However, if ad_storage is set to denied, this information will not be stored locally. To improve ad click measurement quality when ad_storage is denied, you can optionally elect to pass information about ad clicks through URL parameters across pages using URL passthrough.  Similarly, if analytics_storage is set to denied, URL passthrough can be used to send event and session-based analytics (including conversions) without cookies across pages."
       }
     ]
+  },
+  {
+    "type": "GROUP",
+    "name": "additionalSettingsGroup",
+    "displayName": "Additional Axeptio Settings",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
+        "type": "SIMPLE_TABLE",
+        "name": "axeptioAdditionalSettings",
+        "displayName": "Additional Axeptio Settings",
+        "simpleTableColumns": [
+          {
+            "type": "TEXT",
+            "name": "key",
+            "displayName": "Key",
+            "simpleValueType": true,
+            "help": "Name of the Axeptio setting to override or extend.",
+            "isUnique": true
+          },
+          {
+            "type": "TEXT",
+            "name": "value",
+            "displayName": "Value",
+            "simpleValueType": true,
+            "help": "Value assigned to the setting.",
+            "isUnique": false
+          }
+        ],
+        "help": "Here you can add additional settings from our SDK. You can find the full documentationt here : https://support.axeptio.eu/en/articles/274040-advanced-options-and-mode-axeptiosettings"
+      }
+    ]
   }
 ]
 
@@ -301,11 +352,16 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 // Enter your template code here.
 const logToConsole = require('logToConsole');
 const setDefaultConsentState = require('setDefaultConsentState');
+const updateConsentState = require('updateConsentState');
 const gtagSet = require('gtagSet');
+const getCookieValues = require('getCookieValues');
+const JSON = require('JSON');
+const Object = require('Object');
 const queryPermission = require('queryPermission');
 const injectScript = require('injectScript');
 const setInWindow = require('setInWindow');
 const makeNumber = require('makeNumber');
+const decodeUriComponent = require('decodeUriComponent');
 
 if(data.isComoEnabled){
   
@@ -339,31 +395,79 @@ const main = (data) => {
   gtagSet('url_passthrough', data.url_passthrough);
   gtagSet('developer_id.dNGFkYj', true);
   // Set default consent state(s)
+  logToConsole('Axeptio GTM tag: applying default consent state');
   data.defaultSettings.forEach(settings => {
     const defaultData = parseCommandData(settings);
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
     defaultData.wait_for_update = 500;
     setDefaultConsentState(defaultData);
   });
+
+  // Early consent update from Axeptio cookie (runs before SDK loads)
+  // Default cookie name used by Axeptio is "axeptio_cookies"
+  // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
+  if (data.updateConsentStateEarly === true) {
+    const cookieName = data.consentCookieName || 'axeptio_cookies';
+    if (cookieName) {
+      const cookieValues = getCookieValues(cookieName);
+      if (cookieValues && cookieValues.length > 0) {
+        let raw = cookieValues[0];
+        let parsed = JSON.parse(raw);
+        if (parsed === undefined) {
+          const decoded = decodeUriComponent(raw);
+          parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
+        }
+        if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
+          const gcm = parsed['$$googleConsentMode'];
+          const consentModeStates = {};
+          for (const key in gcm) {
+            const val = gcm[key];
+            if (val === 'granted' || val === 'denied') {
+              consentModeStates[key] = val;
+            }
+          }
+          if (Object.keys(consentModeStates).length > 0) {
+            logToConsole('Axeptio GTM tag: early consent update from cookie');
+            updateConsentState(consentModeStates);
+          }
+        }
+      }
+    }
+  }
 };
 
 main(data);
 
 }
 
-setInWindow('axeptioSettings', 
-{clientId: data.id,
-cookiesVersion: data.cookiesVersion,
-dataLayerName: data.dataLayerName,
-userCookiesDuration: makeNumber(data.cookiesDuration),
-userCookiesDomain: data.cookiesDomain,
-userCookiesSecure: data.cookiesSecure,
-postConsentUrl: data.postConsentUrl,
-triggerGTMEvents: data.triggerGTMEvents,
-},
-true);
+const axeptioSettings = {
+  clientId: data.id,
+  cookiesVersion: data.cookiesVersion,
+  dataLayerName: data.dataLayerName,
+  userCookiesDuration: makeNumber(data.cookiesDuration),
+  userCookiesDomain: data.cookiesDomain,
+  userCookiesSecure: data.cookiesSecure,
+  postConsentUrl: data.postConsentUrl,
+  triggerGTMEvents: data.triggerGTMEvents,
+  updateConsentStateEarly: data.updateConsentStateEarly,
+  platform: 'tms-gtm'
+};
 
-
+const additionalSettings = data.axeptioAdditionalSettings || data.additionalSettings;
+if (additionalSettings && typeof additionalSettings.length === 'number') {
+  for (let index = 0; index < additionalSettings.length; index += 1) {
+    const entry = additionalSettings[index];
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const key = typeof entry.key === 'string' ? entry.key.trim() : entry.key;
+    if (!key) {
+      continue;
+    }
+    axeptioSettings[key] = entry.value;
+  }
+}
+setInWindow('axeptioSettings', axeptioSettings, true);
 
 if (queryPermission('inject_script', 'https://static.axept.io/sdk.js')) {
   injectScript('https://static.axept.io/sdk.js', data.gtmOnSuccess, data.gtmOnFailure);
@@ -722,6 +826,39 @@ ___WEB_PERMISSIONS___
                     "boolean": true
                   }
                 ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "get_cookies",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "cookieAccess",
+          "value": {
+            "type": 1,
+            "string": "specific"
+          }
+        },
+        {
+          "key": "cookieNames",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 1,
+                "string": "axeptio_cookies"
               }
             ]
           }
