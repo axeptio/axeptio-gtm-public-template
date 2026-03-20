@@ -91,6 +91,25 @@ ___TEMPLATE_PARAMETERS___
         "help": "Wether or not the cookie holding choices is HTTPS only"
       },
       {
+        "type": "SELECT",
+        "name": "updateConsentStateEarly",
+        "displayName": "Enable early consent update",
+        "macrosInSelect": false,
+        "selectItems": [
+          {
+            "value": false,
+            "displayValue": "False - updated by SDK"
+          },
+          {
+            "value": true,
+            "displayValue": "True - early update attempt by template"
+          }
+        ],
+        "simpleValueType": true,
+        "defaultValue": false,
+        "help": "When false, consent updates are applied entirely by the Axeptio SDK. When true, the template attempts an early consent update from the Axeptio cookie, which may happen faster for returning visitors"
+      },
+      {
         "type": "TEXT",
         "name": "dataLayerName",
         "displayName": "dataLayer Name",
@@ -387,28 +406,30 @@ const main = (data) => {
   // Early consent update from Axeptio cookie (runs before SDK loads)
   // Default cookie name used by Axeptio is "axeptio_cookies"
   // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
-  const cookieName = data.consentCookieName || 'axeptio_cookies';
-  if (cookieName) {
-    const cookieValues = getCookieValues(cookieName);
-    if (cookieValues && cookieValues.length > 0) {
-      let raw = cookieValues[0];
-      let parsed = JSON.parse(raw);
-      if (parsed === undefined) {
-        const decoded = decodeUriComponent(raw);
-        parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
-      }
-      if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
-        const gcm = parsed['$$googleConsentMode'];
-        const consentModeStates = {};
-        for (const key in gcm) {
-          const val = gcm[key];
-          if (val === 'granted' || val === 'denied') {
-            consentModeStates[key] = val;
-          }
+  if (data.updateConsentStateEarly === true) {
+    const cookieName = data.consentCookieName || 'axeptio_cookies';
+    if (cookieName) {
+      const cookieValues = getCookieValues(cookieName);
+      if (cookieValues && cookieValues.length > 0) {
+        let raw = cookieValues[0];
+        let parsed = JSON.parse(raw);
+        if (parsed === undefined) {
+          const decoded = decodeUriComponent(raw);
+          parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
         }
-        if (Object.keys(consentModeStates).length > 0) {
-          logToConsole('Axeptio GTM tag: early consent update from cookie');
-          updateConsentState(consentModeStates);
+        if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
+          const gcm = parsed['$$googleConsentMode'];
+          const consentModeStates = {};
+          for (const key in gcm) {
+            const val = gcm[key];
+            if (val === 'granted' || val === 'denied') {
+              consentModeStates[key] = val;
+            }
+          }
+          if (Object.keys(consentModeStates).length > 0) {
+            logToConsole('Axeptio GTM tag: early consent update from cookie');
+            updateConsentState(consentModeStates);
+          }
         }
       }
     }
@@ -428,6 +449,7 @@ const axeptioSettings = {
   userCookiesSecure: data.cookiesSecure,
   postConsentUrl: data.postConsentUrl,
   triggerGTMEvents: data.triggerGTMEvents,
+  updateConsentStateEarly: data.updateConsentStateEarly,
   platform: 'tms-gtm'
 };
 
