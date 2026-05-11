@@ -137,7 +137,7 @@ ___TEMPLATE_PARAMETERS___
           {
             "type": "REGEX",
             "args": [
-              "^(http(s):\\/\\/.)[-a-zA-Z0-9@:%._\\+~#\u003d]{2,256}\\.[a-z]{2,6}\\b([-a-zA-Z0-9@:%_\\+.~#?\u0026//\u003d]*)$"
+              "^(http(s):\\/\\/.)[-a-zA-Z0-9@:%._\\+~#\u003d]{2,256}\\.[a-z]{2,10}\\b([-a-zA-Z0-9@:%_\\+.~#?\u0026//\u003d]*)$"
             ],
             "enablingConditions": [],
             "errorMessage": "Invalid URL"
