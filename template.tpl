@@ -88,7 +88,7 @@ ___TEMPLATE_PARAMETERS___
         "checkboxText": "User cookies secure",
         "simpleValueType": true,
         "defaultValue": true,
-        "help": "Wether or not the cookie holding choices is HTTPS only"
+        "help": "Whether or not the cookie holding choices is HTTPS only"
       },
       {
         "type": "TEXT",
@@ -321,7 +321,7 @@ ___TEMPLATE_PARAMETERS___
             "isUnique": false
           }
         ],
-        "help": "Here you can add additional settings from our SDK. You can find the full documentationt here : https://support.axeptio.eu/en/articles/274040-advanced-options-and-mode-axeptiosettings"
+        "help": "Here you can add additional settings from our SDK. You can find the full documentation here: https://support.axeptio.eu/en/articles/274040-advanced-options-and-mode-axeptiosettings"
       }
     ]
   }
