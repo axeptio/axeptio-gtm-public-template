@@ -339,11 +339,18 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 // Enter your template code here.
 const logToConsole = require('logToConsole');
 const setDefaultConsentState = require('setDefaultConsentState');
+const updateConsentState = require('updateConsentState');
 const gtagSet = require('gtagSet');
+const getCookieValues = require('getCookieValues');
+const JSON = require('JSON');
+const Object = require('Object');
 const queryPermission = require('queryPermission');
 const injectScript = require('injectScript');
 const setInWindow = require('setInWindow');
 const makeNumber = require('makeNumber');
+const decodeUriComponent = require('decodeUriComponent');
+
+let consentUpdateAlreadySent = false;
 
 if(data.isComoEnabled){
   
@@ -383,6 +390,33 @@ const main = (data) => {
     defaultData.wait_for_update = 500;
     setDefaultConsentState(defaultData);
   });
+
+  // Early consent update from Axeptio cookie (runs before SDK loads).
+  // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
+  const cookieValues = getCookieValues('axeptio_cookies');
+  if (cookieValues && cookieValues.length > 0) {
+    const raw = cookieValues[0];
+    let parsed = JSON.parse(raw);
+    if (parsed === undefined) {
+      const decoded = decodeUriComponent(raw);
+      parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
+    }
+    if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
+      const gcm = parsed['$$googleConsentMode'];
+      const consentModeStates = {};
+      for (const key in gcm) {
+        const val = gcm[key];
+        if (val === 'granted' || val === 'denied') {
+          consentModeStates[key] = val;
+        }
+      }
+      if (Object.keys(consentModeStates).length > 0) {
+        logToConsole('Axeptio GTM tag: early consent update from cookie');
+        updateConsentState(consentModeStates);
+        consentUpdateAlreadySent = true;
+      }
+    }
+  }
 };
 
 main(data);
@@ -400,6 +434,10 @@ const axeptioSettings = {
   triggerGTMEvents: data.triggerGTMEvents,
   platform: 'tms-gtm'
 };
+
+if (consentUpdateAlreadySent) {
+  axeptioSettings.consentUpdateAlreadySent = true;
+}
 
 const additionalSettings = data.axeptioAdditionalSettings || data.additionalSettings;
 if (additionalSettings && typeof additionalSettings.length === 'number') {
@@ -743,6 +781,39 @@ ___WEB_PERMISSIONS___
                     "boolean": true
                   }
                 ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "get_cookies",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "cookieAccess",
+          "value": {
+            "type": 1,
+            "string": "specific"
+          }
+        },
+        {
+          "key": "cookieNames",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 1,
+                "string": "axeptio_cookies"
               }
             ]
           }
