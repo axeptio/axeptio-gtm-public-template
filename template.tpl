@@ -261,6 +261,12 @@ ___TEMPLATE_PARAMETERS___
             "paramValue": true,
             "type": "EQUALS"
           }
+        ],
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY",
+            "errorMessage": "Add at least one row. You can leave the region field empty"
+          }
         ]
       },
       {
