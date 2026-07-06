@@ -13,7 +13,9 @@ concurrency:
 jobs:
   create-release-pr:
     # Requires .github/release-automation-enabled to exist in this repo.
-    uses: axeptio/tech-scripts/.github/workflows/create-release-pr.yml@master
+    # Pinned to a commit SHA (not @master) since this call passes secrets to a
+    # workflow in another repo — bump deliberately, don't track master.
+    uses: axeptio/tech-scripts/.github/workflows/create-release-pr.yml@88cc1b36b18292319f78e840160909ac195a9306 # master @ 2026-07-06
     with:
       source_branch: develop      # branch with accumulated commits
       target_branch: master       # branch to release into
