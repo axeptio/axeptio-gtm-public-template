@@ -4,16 +4,18 @@ This repository uses the canonical Axeptio release automation workflow (ENG-1175
 
 ## Workflow
 
-Two GitHub Actions workflows automate releases:
+Two GitHub Actions workflows automate releases, split across branches because their
+triggers are read from the branch they live on:
 
-- **`create-release-pr.yml`** — runs on schedule (`0 8 * * 1`, every Monday 08:00 UTC)
-  and `workflow_dispatch`. Creates a `release/YYYY-MM-DD` branch from `develop`, runs
-  git-cliff to compute the next version and generate `CHANGELOG.md`, then opens a PR
-  targeting `master`.
+- **`create-release-pr.yml`** (lives on `develop`) — runs on schedule (`0 8 * * 1`,
+  every Monday 08:00 UTC) and `workflow_dispatch`. Creates a `release/YYYY-MM-DD`
+  branch from `develop`, runs git-cliff to compute the next version and generate
+  `CHANGELOG.md`, then opens a PR targeting `master`.
 
-- **`auto-release.yml`** — fires on push to `master` (i.e. when the release PR is
-  merged). Resolves the version from `CHANGELOG.md`, creates a GPG-signed tag,
-  publishes a GitHub Release, and opens a sync-back PR from `master` → `develop`.
+- **`auto-release.yml`** (lives on `master`, not this branch) — fires on push to
+  `master` (i.e. when the release PR is merged). Resolves the version from
+  `CHANGELOG.md`, creates a GPG-signed tag, publishes a GitHub Release, and opens a
+  sync-back PR from `master` → `develop`.
 
 Both workflows run as `axeptio-bot` (via `BOT_GITHUB_TOKEN`), not the default
 `GITHUB_TOKEN` — this org blocks the default token from creating/approving PRs, so a
