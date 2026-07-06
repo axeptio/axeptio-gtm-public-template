@@ -1,0 +1,24 @@
+name: Auto-Release
+
+# Fires when a release PR is merged into master.
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: auto-release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  auto-release:
+    # Requires .github/release-automation-enabled to exist in this repo.
+    uses: axeptio/tech-scripts/.github/workflows/auto-release.yml@master
+    with:
+      target_branch: master    # branch being released
+      source_branch: develop   # branch to sync back into after release
+    secrets:
+      BOT_GITHUB_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}
+      BOT_GPG_PRIVATE_KEY: ${{ secrets.BOT_GPG_PRIVATE_KEY }}
+      BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
