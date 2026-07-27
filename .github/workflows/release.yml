@@ -32,3 +32,8 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.BOT_GITHUB_TOKEN }}
+          # Must be explicit: this input is "detected by default", and the
+          # detected value is the repository's DEFAULT branch (develop) — not the
+          # branch that triggered the run. Without it release-please opens its
+          # release PR against develop and tags from there.
+          target-branch: master
