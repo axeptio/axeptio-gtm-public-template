@@ -58,20 +58,44 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 <!-- END BEADS INTEGRATION -->
 
 
-## Build & Test
-
-_Add your build and test commands here_
-
-```bash
-# Example:
-# npm install
-# npm test
-```
-
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+This repo is **not an application** — it is the public source for the Axeptio CMP tag in the
+[GTM Community Template Gallery](https://tagmanager.google.com/gallery). Two files are the product:
+
+- **`template.tpl`** — the GTM custom template: `___INFO___`, `___TEMPLATE_PARAMETERS___`,
+  `___SANDBOXED_JS___`, `___WEB_PERMISSIONS___` and `___TESTS___` blocks in Google's own format.
+  Its `___TERMS_OF_SERVICE___` header is Google's mandatory gallery boilerplate — **never edit it**.
+- **`metadata.yaml`** — the gallery's published version history (`versions:`, one commit SHA +
+  `changeNotes` per version, newest first). This is what the gallery actually serves.
+
+Everything else is licensing (`LICENSE`, `CONTRIBUTING.md`), release automation
+(`.github/workflows/`, `scripts/`, `release-please-config.json`) or agent tooling (`.beads/`).
+
+## Build & Test
+
+There is **no build, no compile, and no test runner** — nothing to install. Validation is by
+inspection plus these checks:
+
+```bash
+python3 -c "import yaml; yaml.safe_load(open('metadata.yaml'))"   # metadata.yaml still parses
+python3 -c "import json; json.load(open('release-please-config.json'))"
+node --check scripts/update-metadata-version.mjs
+```
+
+To exercise the template itself, import `template.tpl` into a GTM container and use the
+**Tests** tab (the `___TESTS___` block).
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- **Conventional Commits are mandatory.** PRs are squash-merged, so the **PR title** becomes the
+  commit on `master` and is what release-please parses. CI (`Lint commits`) enforces both the PR
+  title and every commit. Types/scopes live in `commitlint.config.mjs`.
+- **Single branch: `master`.** It is both the default and the release branch. No `develop`.
+- **Never hand-edit `VERSION`, `CHANGELOG.md`, `.release-please-manifest.json`, or the
+  `versions:` list in `metadata.yaml`** — all four are generated. See
+  [docs/release-automation.md](docs/release-automation.md).
+- **Licensing:** from `1.0.0` the template ships under Axeptio's licensing terms; earlier
+  published versions stay under Apache 2.0 (that grant is irreversible). Don't reintroduce
+  Apache headers.
+- `gh` is the canonical interface for GitHub work.

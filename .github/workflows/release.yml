@@ -3,6 +3,7 @@ name: Release
 # Drives Semantic Versioning from Conventional Commits. On every push to
 # master, release-please maintains a "release PR". Merging that PR bumps
 # VERSION, updates CHANGELOG.md, tags the commit and publishes a GitHub Release.
+# A follow-up step then appends the new version to the GTM metadata.yaml history.
 #
 # Why not the canonical axeptio/tech-scripts caller workflows (ENG-11756)?
 # This repository is PUBLIC and tech-scripts is INTERNAL. GitHub only lets a
@@ -25,15 +26,58 @@ jobs:
     steps:
       # Authenticate as axeptio-bot (BOT_GITHUB_TOKEN). The org forbids the
       # default GITHUB_TOKEN from creating or approving PRs, which is what broke
-      # the original release-please run (#37) — a real bot account is allowed to.
+      # the original release-please run (#37) — a real bot account is allowed to,
+      # and may bypass the PR requirement when pushing the metadata sync commit.
+      #
+      # target-branch is intentionally omitted: it defaults to the repository's
+      # default branch, which is master — the same branch this workflow triggers
+      # on. (It had to be set explicitly while develop was the default branch,
+      # otherwise release-please opened its release PR against develop.)
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.BOT_GITHUB_TOKEN }}
-          # Must be explicit: this input is "detected by default", and the
-          # detected value is the repository's DEFAULT branch (develop) — not the
-          # branch that triggered the run. Without it release-please opens its
-          # release PR against develop and tags from there.
-          target-branch: master
+
+      # The steps below only run when a release was just published.
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        with:
+          # Use the bot token so the follow-up push authenticates as the bot
+          # (and can bypass branch protection on master).
+          token: ${{ secrets.BOT_GITHUB_TOKEN }}
+
+      # Import the bot's GPG key so the metadata commit is signed — master
+      # enforces signed commits. Also sets git user.name/email from the key
+      # identity and enables commit signing globally.
+      - name: Import bot GPG key
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6.3.0
+        with:
+          gpg_private_key: ${{ secrets.BOT_GPG_PRIVATE_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        with:
+          node-version: 20
+
+      - name: Sync metadata.yaml version history
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: node scripts/update-metadata-version.mjs
+
+      - name: Commit metadata.yaml
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        run: |
+          if [[ -n "$(git status --porcelain metadata.yaml)" ]]; then
+            git add metadata.yaml
+            git commit -m "chore(metadata): sync version history for ${{ steps.release.outputs.tag_name }}"
+            git push
+          else
+            echo "metadata.yaml already up to date; nothing to commit."
+          fi
