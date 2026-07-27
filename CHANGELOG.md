@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v1.0.0...v1.1.0) (2026-07-27)
+
+
+### Features
+
+* early consent update from the Axeptio cookie before the SDK loads ([dbb64f3](https://github.com/axeptio/axeptio-gtm-public-template/commit/dbb64f399143940e38263fa1e8918ef21a91d5a3))
+
+
+### Bug Fixes
+
+* only apply consent types granted write access ([799d5b5](https://github.com/axeptio/axeptio-gtm-public-template/commit/799d5b5b66a4b12682a944f259df3ea6ffb83ad1))
+
 ## [1.0.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v0.1.0...v1.0.0) (2026-07-27)
 
 
