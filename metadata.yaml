@@ -10,11 +10,12 @@
 
 homepage: "https://www.axept.io/"
 documentation: "https://support.axeptio.eu/en/"
+# The gallery requires reverse chronological order: most recent version first.
+# New entries are prepended automatically by scripts/update-metadata-version.mjs
+# after each release — do not add them by hand.
 versions:
-  # Latest version
   - sha: b0ccc441d3258d7dbc1261accf80f72ae4a4af9f
     changeNotes: raised the character limit for server-side URL extension
-  # Older versions
   - sha: 0bb07da989ff1745af7c8982f765536ef5201d76
     changeNotes: added additional Axeptio settings table
   - sha: bfa04e5dcc4df419ab4ffec2e4550e2c0a584b5c
