@@ -1,24 +1,24 @@
-# Copyright 2019 Google LLC
+# Axeptio GTM Public Template
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# IMPORTANT LICENSE NOTICE
+# Starting from version 1.0.0, this content is subject to Axeptio's licensing
+# terms: https://www.axept.io/fr/?axeptio_contract=terms_of_use_en
+# By using this content you acknowledge that you hold a valid Axeptio license and
+# expressly agree to these Licensing Terms. See the LICENSE file for the full
+# notice (English and French). Versions published before 1.0.0 remain under the
+# Apache License 2.0.
 
 homepage: "https://www.axept.io/"
 documentation: "https://support.axeptio.eu/en/"
+# The gallery requires reverse chronological order: most recent version first.
+# New entries are prepended automatically by scripts/update-metadata-version.mjs
+# after each release — do not add them by hand.
 versions:
-  # Latest version
+  - sha: f731863d79fdc3bffe47363092b3e8950fcfafd4
+    changeNotes: |-
+      - replace Apache 2.0 with Axeptio license notice (from v1.0.0)
   - sha: b0ccc441d3258d7dbc1261accf80f72ae4a4af9f
     changeNotes: raised the character limit for server-side URL extension
-  # Older versions
   - sha: 0bb07da989ff1745af7c8982f765536ef5201d76
     changeNotes: added additional Axeptio settings table
   - sha: bfa04e5dcc4df419ab4ffec2e4550e2c0a584b5c

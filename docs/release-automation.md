@@ -1,47 +1,91 @@
 # Release Automation
 
-This repository uses the canonical Axeptio release automation workflow (ENG-11756).
+Releases are driven by [Conventional Commits](https://www.conventionalcommits.org/) and
+[release-please](https://github.com/googleapis/release-please). Every merge to `master`
+maintains a release PR; merging that PR cuts the release and publishes the new version to
+the GTM Community Template Gallery history.
 
-## Workflow
+## Branch flow
 
-Two GitHub Actions workflows automate releases, split across branches because their
-triggers are read from the branch they live on:
+```
+feature branch ──PR──> master ──> release PR ──> tag + GitHub Release ──> metadata.yaml synced
+                       (default)
+```
 
-- **`create-release-pr.yml`** (lives on `develop`) — runs on schedule (`0 8 * * 1`,
-  every Monday 08:00 UTC) and `workflow_dispatch`. Creates a `release/YYYY-MM-DD`
-  branch from `develop`, runs git-cliff to compute the next version and generate
-  `CHANGELOG.md`, then opens a PR targeting `master`.
+`master` is both the default branch and the release branch. There is no `develop`: a second
+long-lived branch bought nothing but drift, and while it was the default branch it silently
+made release-please open its release PR against the wrong branch.
 
-- **`auto-release.yml`** (lives on `master`, not this branch) — fires on push to
-  `master` (i.e. when the release PR is merged). Resolves the version from
-  `CHANGELOG.md`, creates a GPG-signed tag, publishes a GitHub Release, and opens a
-  sync-back PR from `master` → `develop`.
+Pull requests are merged with a **merge commit** (squash and rebase merges are disabled on this
+repository), so every commit in the branch lands on `master` — and every one of them is parsed by
+release-please to work out the next version. Merge commits themselves are ignored. Tidy the branch
+history before merging; `Lint commits` will reject a non-conventional commit anywhere in it.
 
-Both workflows run as `axeptio-bot` (via `BOT_GITHUB_TOKEN`), not the default
-`GITHUB_TOKEN` — this org blocks the default token from creating/approving PRs, so a
-real bot account is required.
+## Workflows
 
-## Gate
+- **`.github/workflows/commitlint.yml`** (`Lint commits`) — runs on every PR with two jobs:
 
-The file `.github/release-automation-enabled` must exist to activate both workflows.
-Remove it to pause automation without touching the workflow files.
+  | Job | What it checks |
+  | --- | --- |
+  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` — these are the ones release-please reads |
+  | `Validate PR title` | the PR title is a valid Conventional Commit — hygiene today, and the safety net if squash-merging is ever enabled |
 
-## Versioning
+  This is what makes automated versioning possible: `fix:` → patch, `feat:` → minor,
+  `feat!:` / `BREAKING CHANGE:` → major.
 
-There is no `package.json` in this repo, so no file-based version bump happens.
-`CHANGELOG.md` and the GitHub Release tag are the source of truth for the current
-version (the old `VERSION` file has been removed).
+- **`.github/workflows/release.yml`** (`Release`) — fires on push to `master`. release-please
+  scans the commits since the last release, works out the next version, and opens (or updates)
+  a release PR that bumps `VERSION`, updates `CHANGELOG.md` and bumps
+  `.release-please-manifest.json`. Merging that PR tags the commit and publishes a GitHub
+  Release.
 
-## Secrets required
+  When — and only when — a release was just published (`release_created == 'true'`), the same
+  workflow then runs `scripts/update-metadata-version.mjs` and pushes a signed
+  `chore(metadata): sync version history for <tag>` commit. That is the step that reaches the
+  gallery (see below).
 
-| Secret | Source |
-| -------------------- | ------------ |
-| `BOT_GITHUB_TOKEN` | Org-level |
-| `BOT_GPG_PRIVATE_KEY` | Org-level |
-| `BOT_EMAIL` | Org-level |
+## GTM Gallery version history
 
-## Canonical spec
+The GTM Community Template Gallery publishes template versions from the `versions:` list in
+`metadata.yaml` — one entry per published version, each a commit SHA plus change notes, in
+reverse chronological order.
 
-- Reusable workflows: `axeptio/tech-scripts` → `.github/workflows/`
-- Templates: `axeptio/tech-scripts` → `github-action-templates/`
-- Full spec: Linear ENG-11756
+`scripts/update-metadata-version.mjs` keeps that list in sync. It takes `RELEASE_TAG` and
+`RELEASE_SHA` from the release-please outputs, derives `changeNotes` from the top section of
+`CHANGELOG.md`, and prepends the entry directly under the `versions:` key. It uses only Node
+built-ins and edits the file textually, so the license header and existing entries are
+preserved byte for byte.
+
+**Do not add `versions:` entries by hand.** The one thing still manual is publishing the new
+version in the gallery UI once the entry has landed.
+
+## Authentication
+
+The workflow authenticates as **`axeptio-bot`**, not the default `GITHUB_TOKEN`. The
+organisation forbids `GITHUB_TOKEN` from creating or approving pull requests, so release-please
+cannot open its release PR without a real bot account. That is what broke the first attempt
+(run `27350014158`).
+
+`master` also enforces **signed commits**, so the metadata sync commit is GPG-signed with the
+bot's key before it is pushed.
+
+| Secret | Used for | Source |
+| --------------------- | ------------------------------------ | --------- |
+| `BOT_GITHUB_TOKEN` | release PR, release, metadata push | Org-level |
+| `BOT_GPG_PRIVATE_KEY` | signing the metadata sync commit | Org-level |
+
+## Why not the canonical Axeptio release automation?
+
+Axeptio's canonical release automation (ENG-11756) is a pair of thin caller workflows —
+`create-release-pr.yml` and `auto-release.yml` — that call reusable workflows hosted in
+`axeptio/tech-scripts`.
+
+**They cannot be used here.** This repository is **public** and `axeptio/tech-scripts` is
+**internal**. GitHub only allows a public caller repository to use reusable workflows from
+**public** repositories, so both callers failed at access time with `workflow was not found`
+before running a single job. See
+[Access to reusable workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/reusable-workflows).
+
+`release-please-action` is a public action, so it has no such restriction. The sibling public
+repository `axeptio/axeptio-sgtm-public-template` uses the same approach, and this repo's setup
+is deliberately kept aligned with it.

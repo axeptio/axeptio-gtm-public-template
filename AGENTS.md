@@ -126,3 +126,46 @@ bd prime                # Refresh Beads context
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 <!-- END BEADS CODEX SETUP -->
+
+## Architecture Overview
+
+This repo is **not an application** — it is the public source for the Axeptio CMP tag in the
+[GTM Community Template Gallery](https://tagmanager.google.com/gallery). Two files are the product:
+
+- **`template.tpl`** — the GTM custom template: `___INFO___`, `___TEMPLATE_PARAMETERS___`,
+  `___SANDBOXED_JS___`, `___WEB_PERMISSIONS___` and `___TESTS___` blocks in Google's own format.
+  Its `___TERMS_OF_SERVICE___` header is Google's mandatory gallery boilerplate — **never edit it**.
+- **`metadata.yaml`** — the gallery's published version history (`versions:`, one commit SHA +
+  `changeNotes` per version, newest first). This is what the gallery actually serves.
+
+Everything else is licensing (`LICENSE`, `CONTRIBUTING.md`), release automation
+(`.github/workflows/`, `scripts/`, `release-please-config.json`) or agent tooling (`.beads/`).
+
+## Build & Test
+
+There is **no build, no compile, and no test runner** — nothing to install. Validation is by
+inspection plus these checks:
+
+```bash
+python3 -c "import yaml; yaml.safe_load(open('metadata.yaml'))"   # metadata.yaml still parses
+python3 -c "import json; json.load(open('release-please-config.json'))"
+node --check scripts/update-metadata-version.mjs
+```
+
+To exercise the template itself, import `template.tpl` into a GTM container and use the
+**Tests** tab (the `___TESTS___` block).
+
+## Conventions & Patterns
+
+- **Conventional Commits are mandatory.** PRs land as **merge commits** (squash and rebase are
+  disabled), so *every* commit in the branch reaches `master` and is what release-please parses —
+  tidy the history before merging. CI (`Lint commits`) checks every commit and the PR title.
+  Types/scopes live in `commitlint.config.mjs`.
+- **Single branch: `master`.** It is both the default and the release branch. No `develop`.
+- **Never hand-edit `VERSION`, `CHANGELOG.md`, `.release-please-manifest.json`, or the
+  `versions:` list in `metadata.yaml`** — all four are generated. See
+  [docs/release-automation.md](docs/release-automation.md).
+- **Licensing:** from `1.0.0` the template ships under Axeptio's licensing terms; earlier
+  published versions stay under Apache 2.0 (that grant is irreversible). Don't reintroduce
+  Apache headers.
+- `gh` is the canonical interface for GitHub work.
