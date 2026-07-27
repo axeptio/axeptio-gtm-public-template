@@ -404,9 +404,18 @@ const main = (data) => {
     if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
       const gcm = parsed['$$googleConsentMode'];
       const consentModeStates = {};
+      // Only the consent types granted write access in ___WEB_PERMISSIONS___
+      // (access_consent). updateConsentState requires write access for *every*
+      // type in the object, so passing one that isn't granted fails the
+      // permission check and aborts the tag before injectScript — the SDK would
+      // never load. The cookie is client-side and Axeptio also supports the
+      // optional functionality_storage / personalization_storage /
+      // security_storage signals, so the key set can't be trusted. Keep this
+      // list in sync with the access_consent permission.
+      const allowedConsentTypes = ['ad_storage', 'analytics_storage', 'ad_user_data', 'ad_personalization'];
       for (const key in gcm) {
         const val = gcm[key];
-        if (val === 'granted' || val === 'denied') {
+        if (allowedConsentTypes.indexOf(key) !== -1 && (val === 'granted' || val === 'denied')) {
           consentModeStates[key] = val;
         }
       }
