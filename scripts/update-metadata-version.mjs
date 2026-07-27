@@ -60,10 +60,19 @@ function buildChangeNotes() {
     .filter((l) => l.startsWith('* ') || l.startsWith('- '))
     .map((l) => l.replace(/^[*-]\s+/, '- '))
     // remove trailing "([abc1234](url))" commit references
-    .map((l) => l.replace(/\s*\(\[[^\]]+\]\([^)]+\)\)\s*$/, '').trim());
+    .map((l) => l.replace(/\s*\(\[[^\]]+\]\([^)]+\)\)\s*$/, ''))
+    // flatten any remaining inline "[text](url)" to just "text" — release-please
+    // auto-links things like @master in a subject, and the raw markdown is noise
+    // in the gallery, which renders these notes as plain text
+    .map((l) => l.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim());
 
-  if (lines.length === 0) return `Release ${tag}`;
-  return lines.join('\n');
+  // A breaking change is listed twice by release-please (once under BREAKING
+  // CHANGES, once under its own type), and a subject can repeat when the same
+  // fix reached the branch by more than one route. Keep the first occurrence.
+  const deduped = [...new Set(lines)];
+
+  if (deduped.length === 0) return `Release ${tag}`;
+  return deduped.join('\n');
 }
 
 // --- Prepend the new version entry to metadata.yaml ------------------------
