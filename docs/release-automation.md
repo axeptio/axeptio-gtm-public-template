@@ -2,44 +2,77 @@
 
 Releases are driven by [Conventional Commits](https://www.conventionalcommits.org/) and
 [release-please](https://github.com/googleapis/release-please). Every merge to `master`
-maintains a release PR; merging that PR cuts the release.
-
-## Workflows
-
-- **`.github/workflows/commitlint.yml`** — runs on every PR and rejects commits that don't
-  follow the Conventional Commits format. This is what makes automated versioning possible:
-  `fix:` → patch, `feat:` → minor, `feat!:` / `BREAKING CHANGE:` → major.
-
-- **`.github/workflows/release.yml`** — fires on push to `master`. release-please scans the
-  commits since the last release, works out the next version, and opens (or updates) a
-  release PR that bumps `VERSION`, updates `CHANGELOG.md` and bumps
-  `.release-please-manifest.json`. Merging that PR tags the commit and publishes a GitHub
-  Release.
+maintains a release PR; merging that PR cuts the release and publishes the new version to
+the GTM Community Template Gallery history.
 
 ## Branch flow
 
 ```
-feature branch ──PR──> develop ──PR──> master ──> release PR ──> tag + GitHub Release
-                       (default)       (release)
+feature branch ──PR──> master ──> release PR ──> tag + GitHub Release ──> metadata.yaml synced
+                       (default)
 ```
 
-Day-to-day work lands on `develop`. To release, open a `develop` → `master` PR and merge it;
-release-please takes over from there.
+`master` is both the default branch and the release branch. There is no `develop`: a second
+long-lived branch bought nothing but drift, and while it was the default branch it silently
+made release-please open its release PR against the wrong branch.
 
-> After a release, `master` is ahead of `develop` (`VERSION`, `CHANGELOG.md`,
-> `.release-please-manifest.json`). Merge `master` back into `develop` so the next
-> `develop` → `master` PR doesn't conflict on `CHANGELOG.md`.
+Pull requests are merged with a **merge commit** (squash and rebase merges are disabled on this
+repository), so every commit in the branch lands on `master` — and every one of them is parsed by
+release-please to work out the next version. Merge commits themselves are ignored. Tidy the branch
+history before merging; `Lint commits` will reject a non-conventional commit anywhere in it.
+
+## Workflows
+
+- **`.github/workflows/commitlint.yml`** (`Lint commits`) — runs on every PR with two jobs:
+
+  | Job | What it checks |
+  | --- | --- |
+  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` — these are the ones release-please reads |
+  | `Validate PR title` | the PR title is a valid Conventional Commit — hygiene today, and the safety net if squash-merging is ever enabled |
+
+  This is what makes automated versioning possible: `fix:` → patch, `feat:` → minor,
+  `feat!:` / `BREAKING CHANGE:` → major.
+
+- **`.github/workflows/release.yml`** (`Release`) — fires on push to `master`. release-please
+  scans the commits since the last release, works out the next version, and opens (or updates)
+  a release PR that bumps `VERSION`, updates `CHANGELOG.md` and bumps
+  `.release-please-manifest.json`. Merging that PR tags the commit and publishes a GitHub
+  Release.
+
+  When — and only when — a release was just published (`release_created == 'true'`), the same
+  workflow then runs `scripts/update-metadata-version.mjs` and pushes a signed
+  `chore(metadata): sync version history for <tag>` commit. That is the step that reaches the
+  gallery (see below).
+
+## GTM Gallery version history
+
+The GTM Community Template Gallery publishes template versions from the `versions:` list in
+`metadata.yaml` — one entry per published version, each a commit SHA plus change notes, in
+reverse chronological order.
+
+`scripts/update-metadata-version.mjs` keeps that list in sync. It takes `RELEASE_TAG` and
+`RELEASE_SHA` from the release-please outputs, derives `changeNotes` from the top section of
+`CHANGELOG.md`, and prepends the entry directly under the `versions:` key. It uses only Node
+built-ins and edits the file textually, so the license header and existing entries are
+preserved byte for byte.
+
+**Do not add `versions:` entries by hand.** The one thing still manual is publishing the new
+version in the gallery UI once the entry has landed.
 
 ## Authentication
 
-The workflow authenticates as **`axeptio-bot`** via `BOT_GITHUB_TOKEN`, not the default
-`GITHUB_TOKEN`. The organisation forbids `GITHUB_TOKEN` from creating or approving pull
-requests, so release-please cannot open its release PR without a real bot account. That is
-what broke the first attempt (run `27350014158`).
+The workflow authenticates as **`axeptio-bot`**, not the default `GITHUB_TOKEN`. The
+organisation forbids `GITHUB_TOKEN` from creating or approving pull requests, so release-please
+cannot open its release PR without a real bot account. That is what broke the first attempt
+(run `27350014158`).
 
-| Secret | Source |
-| ------------------ | --------- |
-| `BOT_GITHUB_TOKEN` | Org-level |
+`master` also enforces **signed commits**, so the metadata sync commit is GPG-signed with the
+bot's key before it is pushed.
+
+| Secret | Used for | Source |
+| --------------------- | ------------------------------------ | --------- |
+| `BOT_GITHUB_TOKEN` | release PR, release, metadata push | Org-level |
+| `BOT_GPG_PRIVATE_KEY` | signing the metadata sync commit | Org-level |
 
 ## Why not the canonical Axeptio release automation?
 
@@ -54,13 +87,5 @@ before running a single job. See
 [Access to reusable workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/reusable-workflows).
 
 `release-please-action` is a public action, so it has no such restriction. The sibling public
-repository `axeptio/axeptio-sgtm-public-template` uses the same approach.
-
-## Known gap — the GTM Gallery
-
-The GTM Community Template Gallery publishes template versions from the `versions:` list in
-`metadata.yaml` (a commit SHA plus change notes per entry). **Nothing in this flow updates
-that file**, so cutting a release does not by itself publish a new version to the gallery —
-`metadata.yaml` is still maintained by hand.
-
-Tracked as `gtm-3uk` in the local beads tracker (`bd show gtm-3uk`).
+repository `axeptio/axeptio-sgtm-public-template` uses the same approach, and this repo's setup
+is deliberately kept aligned with it.
