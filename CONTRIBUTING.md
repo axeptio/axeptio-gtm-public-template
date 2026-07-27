@@ -60,10 +60,12 @@ docs: clarify the import steps
 
 **Important notes**
 
-- Because pull requests are **squash-merged**, the **PR title** becomes the
-  commit message on `master` — so the PR title itself must be a valid
-  Conventional Commit. The `Lint commits` CI check enforces this, and lints
-  every commit in the pull request as well.
+- Pull requests are merged with a **merge commit** (squash and rebase are
+  disabled), so **every individual commit** lands on `master` and is parsed by
+  release-please. The `Lint commits` CI check lints them all — a stray
+  `wip: fixup` in your branch will fail the check, so tidy the history before
+  requesting review. The PR title is linted too, so it stays a valid
+  Conventional Commit.
 - Releases, `CHANGELOG.md`, git tags, GitHub Releases, and the `versions:`
   history in `metadata.yaml` are **all generated automatically**. Do not edit
   versions or the changelog by hand. See

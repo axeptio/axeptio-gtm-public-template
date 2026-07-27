@@ -16,8 +16,10 @@ feature branch ──PR──> master ──> release PR ──> tag + GitHub Re
 long-lived branch bought nothing but drift, and while it was the default branch it silently
 made release-please open its release PR against the wrong branch.
 
-Pull requests are **squash-merged**, so the PR title becomes the commit message on `master` —
-which is what release-please parses to work out the next version.
+Pull requests are merged with a **merge commit** (squash and rebase merges are disabled on this
+repository), so every commit in the branch lands on `master` — and every one of them is parsed by
+release-please to work out the next version. Merge commits themselves are ignored. Tidy the branch
+history before merging; `Lint commits` will reject a non-conventional commit anywhere in it.
 
 ## Workflows
 
@@ -25,8 +27,8 @@ which is what release-please parses to work out the next version.
 
   | Job | What it checks |
   | --- | --- |
-  | `Validate PR title` | the PR title is a valid Conventional Commit (it becomes the squash commit) |
-  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` |
+  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` — these are the ones release-please reads |
+  | `Validate PR title` | the PR title is a valid Conventional Commit — hygiene today, and the safety net if squash-merging is ever enabled |
 
   This is what makes automated versioning possible: `fix:` → patch, `feat:` → minor,
   `feat!:` / `BREAKING CHANGE:` → major.

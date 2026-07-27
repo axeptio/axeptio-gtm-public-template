@@ -73,10 +73,14 @@ jobs:
 
       - name: Commit metadata.yaml
         if: ${{ steps.release.outputs.release_created == 'true' }}
+        # RELEASE_TAG goes through env rather than being interpolated straight
+        # into the script: never expand ${{ }} inside a run: block.
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
         run: |
           if [[ -n "$(git status --porcelain metadata.yaml)" ]]; then
             git add metadata.yaml
-            git commit -m "chore(metadata): sync version history for ${{ steps.release.outputs.tag_name }}"
+            git commit -m "chore(metadata): sync version history for ${RELEASE_TAG}"
             git push
           else
             echo "metadata.yaml already up to date; nothing to commit."

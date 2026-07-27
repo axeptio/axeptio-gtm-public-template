@@ -88,9 +88,10 @@ To exercise the template itself, import `template.tpl` into a GTM container and 
 
 ## Conventions & Patterns
 
-- **Conventional Commits are mandatory.** PRs are squash-merged, so the **PR title** becomes the
-  commit on `master` and is what release-please parses. CI (`Lint commits`) enforces both the PR
-  title and every commit. Types/scopes live in `commitlint.config.mjs`.
+- **Conventional Commits are mandatory.** PRs land as **merge commits** (squash and rebase are
+  disabled), so *every* commit in the branch reaches `master` and is what release-please parses —
+  tidy the history before merging. CI (`Lint commits`) checks every commit and the PR title.
+  Types/scopes live in `commitlint.config.mjs`.
 - **Single branch: `master`.** It is both the default and the release branch. No `develop`.
 - **Never hand-edit `VERSION`, `CHANGELOG.md`, `.release-please-manifest.json`, or the
   `versions:` list in `metadata.yaml`** — all four are generated. See

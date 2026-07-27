@@ -12,8 +12,10 @@ permissions:
 
 jobs:
   pr-title:
-    # The PR title becomes the commit message when the PR is squash-merged,
-    # so it must itself be a valid Conventional Commit.
+    # This repo merges with merge commits, so the commits job below is the one
+    # release-please actually depends on. Keep this as hygiene, and as the
+    # safety net if squash-merging is ever enabled — then the PR title would
+    # become the commit message on master.
     name: Validate PR title
     runs-on: ubuntu-latest
     steps:
