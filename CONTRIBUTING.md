@@ -60,14 +60,14 @@ docs: clarify the import steps
 
 **Important notes**
 
-- A CI check (`Commitlint`) enforces the format on every commit in a pull
-  request.
-- Releases, `CHANGELOG.md`, git tags and GitHub Releases are **all generated
-  automatically** by release-please. Do not edit versions or the changelog by
-  hand. See [docs/release-automation.md](./docs/release-automation.md).
-- The `versions:` history in `metadata.yaml` is what the GTM Community Template
-  Gallery publishes. It is currently maintained by hand — add an entry only when
-  `template.tpl` actually changes.
+- Because pull requests are **squash-merged**, the **PR title** becomes the
+  commit message on `master` — so the PR title itself must be a valid
+  Conventional Commit. The `Lint commits` CI check enforces this, and lints
+  every commit in the pull request as well.
+- Releases, `CHANGELOG.md`, git tags, GitHub Releases, and the `versions:`
+  history in `metadata.yaml` are **all generated automatically**. Do not edit
+  versions or the changelog by hand. See
+  [docs/release-automation.md](./docs/release-automation.md).
 
 ## Community Guidelines
 
