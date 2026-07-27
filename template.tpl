@@ -88,7 +88,7 @@ ___TEMPLATE_PARAMETERS___
         "checkboxText": "User cookies secure",
         "simpleValueType": true,
         "defaultValue": true,
-        "help": "Wether or not the cookie holding choices is HTTPS only"
+        "help": "Whether or not the cookie holding choices is HTTPS only"
       },
       {
         "type": "TEXT",
@@ -261,6 +261,12 @@ ___TEMPLATE_PARAMETERS___
             "paramValue": true,
             "type": "EQUALS"
           }
+        ],
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY",
+            "errorMessage": "Add at least one row. You can leave the region field empty"
+          }
         ]
       },
       {
@@ -321,7 +327,7 @@ ___TEMPLATE_PARAMETERS___
             "isUnique": false
           }
         ],
-        "help": "Here you can add additional settings from our SDK. You can find the full documentationt here : https://support.axeptio.eu/en/articles/274040-advanced-options-and-mode-axeptiosettings"
+        "help": "Here you can add additional settings from our SDK. You can find the full documentation here: https://support.axeptio.eu/en/articles/274040-advanced-options-and-mode-axeptiosettings"
       }
     ]
   }
@@ -333,11 +339,18 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 // Enter your template code here.
 const logToConsole = require('logToConsole');
 const setDefaultConsentState = require('setDefaultConsentState');
+const updateConsentState = require('updateConsentState');
 const gtagSet = require('gtagSet');
+const getCookieValues = require('getCookieValues');
+const JSON = require('JSON');
+const Object = require('Object');
 const queryPermission = require('queryPermission');
 const injectScript = require('injectScript');
 const setInWindow = require('setInWindow');
 const makeNumber = require('makeNumber');
+const decodeUriComponent = require('decodeUriComponent');
+
+let consentUpdateAlreadySent = false;
 
 if(data.isComoEnabled){
   
@@ -377,6 +390,42 @@ const main = (data) => {
     defaultData.wait_for_update = 500;
     setDefaultConsentState(defaultData);
   });
+
+  // Early consent update from Axeptio cookie (runs before SDK loads).
+  // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
+  const cookieValues = getCookieValues('axeptio_cookies');
+  if (cookieValues && cookieValues.length > 0) {
+    const raw = cookieValues[0];
+    let parsed = JSON.parse(raw);
+    if (parsed === undefined) {
+      const decoded = decodeUriComponent(raw);
+      parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
+    }
+    if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
+      const gcm = parsed['$$googleConsentMode'];
+      const consentModeStates = {};
+      // Only the consent types granted write access in ___WEB_PERMISSIONS___
+      // (access_consent). updateConsentState requires write access for *every*
+      // type in the object, so passing one that isn't granted fails the
+      // permission check and aborts the tag before injectScript — the SDK would
+      // never load. The cookie is client-side and Axeptio also supports the
+      // optional functionality_storage / personalization_storage /
+      // security_storage signals, so the key set can't be trusted. Keep this
+      // list in sync with the access_consent permission.
+      const allowedConsentTypes = ['ad_storage', 'analytics_storage', 'ad_user_data', 'ad_personalization'];
+      for (const key in gcm) {
+        const val = gcm[key];
+        if (allowedConsentTypes.indexOf(key) !== -1 && (val === 'granted' || val === 'denied')) {
+          consentModeStates[key] = val;
+        }
+      }
+      if (Object.keys(consentModeStates).length > 0) {
+        logToConsole('Axeptio GTM tag: early consent update from cookie');
+        updateConsentState(consentModeStates);
+        consentUpdateAlreadySent = true;
+      }
+    }
+  }
 };
 
 main(data);
@@ -394,6 +443,10 @@ const axeptioSettings = {
   triggerGTMEvents: data.triggerGTMEvents,
   platform: 'tms-gtm'
 };
+
+if (consentUpdateAlreadySent) {
+  axeptioSettings.consentUpdateAlreadySent = true;
+}
 
 const additionalSettings = data.axeptioAdditionalSettings || data.additionalSettings;
 if (additionalSettings && typeof additionalSettings.length === 'number') {
@@ -737,37 +790,39 @@ ___WEB_PERMISSIONS___
                     "boolean": true
                   }
                 ]
-              },
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "get_cookies",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "cookieAccess",
+          "value": {
+            "type": 1,
+            "string": "specific"
+          }
+        },
+        {
+          "key": "cookieNames",
+          "value": {
+            "type": 2,
+            "listItem": [
               {
-                "type": 3,
-                "mapKey": [
-                  {
-                    "type": 1,
-                    "string": "consentType"
-                  },
-                  {
-                    "type": 1,
-                    "string": "read"
-                  },
-                  {
-                    "type": 1,
-                    "string": "write"
-                  }
-                ],
-                "mapValue": [
-                  {
-                    "type": 1,
-                    "string": "wait_for_update"
-                  },
-                  {
-                    "type": 8,
-                    "boolean": true
-                  },
-                  {
-                    "type": 8,
-                    "boolean": true
-                  }
-                ]
+                "type": 1,
+                "string": "axeptio_cookies"
               }
             ]
           }
