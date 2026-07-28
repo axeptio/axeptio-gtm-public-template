@@ -96,7 +96,16 @@ To exercise the template itself, import `template.tpl` into a GTM container and 
 - **Never hand-edit `VERSION`, `CHANGELOG.md`, `.release-please-manifest.json`, or the
   `versions:` list in `metadata.yaml`** — all four are generated. See
   [docs/release-automation.md](docs/release-automation.md).
-- **Licensing:** from `1.0.0` the template ships under Axeptio's licensing terms; earlier
-  published versions stay under Apache 2.0 (that grant is irreversible). Don't reintroduce
-  Apache headers.
+- **Licensing is load-bearing — do not change `LICENSE`.** The Community Template Gallery
+  requires it to contain **only** Apache 2.0, and removes a template whose licence does not
+  match. Replacing it with Axeptio's proprietary terms is what caused SUP-1008: the template
+  was delisted within ~24h. Gallery distribution and proprietary licensing are mutually
+  exclusive — if the licence must change, the template has to leave the gallery, and that is
+  a business decision, not a code change.
+- **Before touching `LICENSE`, `metadata.yaml`, `template.tpl` or the default branch**, check
+  them against the
+  [gallery requirements](https://developers.google.com/tag-platform/tag-manager/templates/gallery).
+  All three files must be at the repo root on the default branch. Deleting or malforming
+  `LICENSE` or `metadata.yaml` triggers automatic removal, and re-listing needs a manual
+  resubmission — it is not automatic.
 - `gh` is the canonical interface for GitHub work.
