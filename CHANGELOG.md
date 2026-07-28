@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v1.1.0...v2.0.0) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* restore the Apache 2.0 licence required by the GTM Gallery
+
+### Bug Fixes
+
+* **metadata:** restore gallery latest-version marker ([7be2059](https://github.com/axeptio/axeptio-gtm-public-template/commit/7be205976984716d65cb089baa9a25ffe3b2ce15))
+* **metadata:** restore gallery latest-version marker ([96b2d1d](https://github.com/axeptio/axeptio-gtm-public-template/commit/96b2d1d2ed8352b677b446d34b01e99c8178908c))
+* restore the Apache 2.0 licence required by the GTM Gallery ([1f9f691](https://github.com/axeptio/axeptio-gtm-public-template/commit/1f9f691299daca4b997a4b39644b902a13c7bece))
+
 ## [1.1.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v1.0.0...v1.1.0) (2026-07-27)
 
 
