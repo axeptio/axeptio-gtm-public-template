@@ -1,0 +1,45 @@
+name: Validate gallery contract
+
+# Guards the GTM Community Template Gallery submission contract. The gallery
+# publishes no submission-status feedback and re-checks repositories on a 2-3 day
+# cycle, so a violation is invisible until it becomes an outage — SUP-1008 was
+# found by a customer roughly a day after the LICENSE was replaced. This is the
+# only place a violation can be caught before it ships.
+#
+# Runs on pushes to master as well as pull requests: the LICENSE regression
+# reached master through a merge, which a PR-only gate would not have stopped.
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate gallery contract
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 — the version checks resolve every versions[].sha and test
+      # ancestry against HEAD, which a shallow clone cannot answer.
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML
+        run: pip install --disable-pip-version-check pyyaml
+
+      - name: Validate
+        # GH_TOKEN lets the script read repository settings for the Issues warning.
+        # It is warn-only, so the step still passes if the call is unavailable.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/validate-gallery.py
