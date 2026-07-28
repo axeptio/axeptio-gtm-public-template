@@ -88,6 +88,15 @@ if (metadata.includes(sha)) {
 // trailing newline) still matches and gets its entry inserted below the key.
 if (!metadata.endsWith('\n')) metadata += '\n';
 
+// The gallery indexes the published version off the `# Latest version`
+// comment immediately above the top entry. Strip it (and the `# Older
+// versions` marker above the entry it demotes) so we can re-add both in the
+// right place below — otherwise the marker silently stays on the old entry
+// and the gallery keeps indexing a stale version.
+metadata = metadata
+  .replace(/^[ \t]*# Latest version\r?\n/m, '')
+  .replace(/^[ \t]*# Older versions\r?\n/m, '');
+
 const versionsKey = metadata.match(/^versions:[ \t]*\r?\n/m);
 if (!versionsKey) {
   console.error('Could not find a `versions:` key in metadata.yaml.');
@@ -104,7 +113,7 @@ const notesBlock = changeNotes
   .map((l) => `      ${l}`)
   .join('\n');
 
-const entry = `  - sha: ${sha}\n    changeNotes: |-\n${notesBlock}\n`;
+const entry = `  # Latest version\n  - sha: ${sha}\n    changeNotes: |-\n${notesBlock}\n  # Older versions\n`;
 
 // Insert directly under `versions:` so the newest release is listed first.
 const insertAt = versionsKey.index + versionsKey[0].length;
