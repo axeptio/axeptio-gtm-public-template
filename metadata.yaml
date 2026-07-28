@@ -22,6 +22,11 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: faeb174c854e823ade10c11dbca65b0c1541d2d7
+    changeNotes: |-
+      - restore the Apache 2.0 licence required by the GTM Gallery
+      - **metadata:** restore gallery latest-version marker
+  # Older versions
   - sha: c39ef71797499bc2398fcea312238fd3562307a8
     changeNotes: |-
       - early consent update from the Axeptio cookie before the SDK loads
@@ -29,7 +34,6 @@ versions:
       - require at least one row when Consent Mode v2 is enabled
       - remove wait_for_update from access_consent permissions
       - correct typos in template help text
-  # Older versions
   - sha: f731863d79fdc3bffe47363092b3e8950fcfafd4
     changeNotes: |-
       - replace Apache 2.0 with Axeptio license notice (from v1.0.0)
