@@ -33,7 +33,7 @@ A CI check, `Validate gallery contract`, runs on every pull request and on pushe
 it yourself before touching `LICENSE`, `metadata.yaml` or `template.tpl`:
 
 ```bash
-pip install pyyaml          # one-time
+pip install pyyaml          # one-time; the script needs Python 3.7+
 python3 scripts/validate-gallery.py
 ```
 

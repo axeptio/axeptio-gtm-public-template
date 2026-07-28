@@ -16,6 +16,13 @@ Exits 0 when every check passes, 1 otherwise. All violations are reported, not j
 the first, so one CI run tells you everything that is wrong.
 """
 
+# Keeps annotations lazy so `dict | None` and `list[str]` are never evaluated at
+# import time. Without this the script needs Python 3.10+ and dies with a
+# TypeError before running a single check on anything older — a poor failure for
+# a validator contributors run locally on whatever python3 they happen to have.
+# With it, 3.7+ works.
+from __future__ import annotations
+
 import json
 import re
 import subprocess
