@@ -74,14 +74,21 @@ Everything else is licensing (`LICENSE`, `CONTRIBUTING.md`), release automation
 
 ## Build & Test
 
-There is **no build, no compile, and no test runner** — nothing to install. Validation is by
-inspection plus these checks:
+There is **no build, no compile, and no test runner** — nothing to install beyond PyYAML.
+Validation is by inspection plus these checks:
 
 ```bash
-python3 -c "import yaml; yaml.safe_load(open('metadata.yaml'))"   # metadata.yaml still parses
+python3 scripts/validate-gallery.py    # THE important one — see below (needs 3.7+, PyYAML)
 python3 -c "import json; json.load(open('release-please-config.json'))"
 node --check scripts/update-metadata-version.mjs
 ```
+
+`validate-gallery.py` enforces the **Community Template Gallery contract** — the LICENSE being
+Apache-2.0-only, `categories` in `___INFO___`, every `versions[].sha` real and newest-first, the
+`# Latest version` marker, and the required files at the repo root. Breaking any of these silently
+delists the template 2-3 days later with no feedback from Google, which is exactly how SUP-1008
+happened. CI runs it on every PR **and** on pushes to `master`; run it locally before touching
+`LICENSE`, `metadata.yaml` or `template.tpl`.
 
 To exercise the template itself, import `template.tpl` into a GTM container and use the
 **Tests** tab (the `___TESTS___` block).

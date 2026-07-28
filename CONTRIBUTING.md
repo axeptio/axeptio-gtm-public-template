@@ -21,6 +21,30 @@ use GitHub pull requests for this purpose. Consult
 [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more
 information on using pull requests.
 
+## The gallery contract
+
+This template is published through the
+[Community Template Gallery](https://developers.google.com/tag-platform/tag-manager/templates/gallery),
+which imposes requirements on the repository itself — not just on the template code. Break one and
+Google **silently delists the template** a couple of days later, with no notification on the pull
+request and no submission-status page to check.
+
+A CI check, `Validate gallery contract`, runs on every pull request and on pushes to `master`. Run
+it yourself before touching `LICENSE`, `metadata.yaml` or `template.tpl`:
+
+```bash
+pip install pyyaml          # one-time; the script needs Python 3.7+
+python3 scripts/validate-gallery.py
+```
+
+It reports every violation at once. The rules most easily broken by accident:
+
+- **`LICENSE` must contain *only* Apache 2.0.** Not "Apache 2.0 plus a notice" — only. Changing it
+  removes the template from the gallery, which is what happened in SUP-1008.
+- **`___INFO___` must declare `categories`** — 1 to 3 values from Google's list, most relevant first.
+- **`versions:` entries must be real commits on `master`, newest first**, with the `# Latest version`
+  marker on the top entry. Never edit this list by hand; it is generated on release.
+
 ## Commit & pull request conventions
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
