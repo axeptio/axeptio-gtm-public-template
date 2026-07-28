@@ -5,11 +5,14 @@ just a few small guidelines you need to follow.
 
 ## Contributions and licensing
 
-From version `1.0.0`, this template is distributed under Axeptio's licensing
-terms (see [LICENSE](./LICENSE)); earlier versions remain under the Apache
-License 2.0. By submitting a contribution you agree that it is provided under,
-and may be redistributed as part of this project under, those Axeptio licensing
-terms.
+This template is distributed under the [Apache License 2.0](./LICENSE). By
+submitting a contribution you agree that it is provided under, and may be
+redistributed as part of this project under, that licence.
+
+The [Community Template Gallery](https://developers.google.com/tag-platform/tag-manager/templates/gallery)
+requires the `LICENSE` file to contain **only** Apache 2.0. A template whose
+licence does not match is removed from the gallery automatically, so the licence
+cannot be changed while the template is distributed there.
 
 ## Code reviews
 
