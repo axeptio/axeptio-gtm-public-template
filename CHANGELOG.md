@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.1](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.0.0...v2.0.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* **ci:** make the validator run on Python 3.7+ instead of 3.10+ ([1ca8699](https://github.com/axeptio/axeptio-gtm-public-template/commit/1ca8699ecfddabb62442b8964dbcc9cc7f070ab3))
+* **template:** declare the categories required by the gallery ([be386c0](https://github.com/axeptio/axeptio-gtm-public-template/commit/be386c07a8dc875e537ca9aebca5570c5b6f32b9))
+* **template:** declare the categories required by the gallery ([06d5a30](https://github.com/axeptio/axeptio-gtm-public-template/commit/06d5a30b0eb79730241bd99e2ce9c9aaab1195e6))
+
 ## [2.0.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v1.1.0...v2.0.0) (2026-07-28)
 
 
