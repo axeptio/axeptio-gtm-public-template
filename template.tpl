@@ -498,7 +498,12 @@ const sdkUrl = data.product === 'publishers' ?
 // hand us a value we don't recognise. Falling back to Brands is the safe load,
 // but silently serving a non-TCF banner where TCF was intended is a compliance
 // problem — make it visible in Preview rather than letting it pass unnoticed.
-if (data.product && data.product !== 'brands' && data.product !== 'publishers') {
+//
+// Compared against undefined rather than tested for truthiness: a lookup table
+// with no match yields an empty string, which is the single most likely way to
+// land here and would be skipped by a truthy check. Only undefined — a tag
+// saved before this field existed — is legitimately silent.
+if (data.product !== undefined && data.product !== 'brands' && data.product !== 'publishers') {
   logToConsole('Axeptio GTM tag: unrecognised product "' + data.product + '", loading Brands.');
 }
 
