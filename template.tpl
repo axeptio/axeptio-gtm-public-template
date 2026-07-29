@@ -490,6 +490,18 @@ setInWindow('axeptioSettings', axeptioSettings, true);
 // Brands and Publishers are different SDK builds, so the URL has to follow the
 // product the Project ID belongs to. Anything other than 'publishers' loads
 // Brands, which keeps tags saved before this field existed working unchanged.
+//
+// Both URLs must stay loadable as a CLASSIC script. injectScript() creates a
+// plain <script> and sandboxed JS cannot set type="module", so an ES-module
+// build fails here in the worst way: the file still returns 200, onload still
+// fires, gtmOnSuccess is still called, and the SDK silently never initialises.
+// The TCF bundle is built as an IIFE for exactly this reason — see
+// axeptio/tcf-cmp-client (ENG-13144). If that build ever reverts to esm, the
+// Publishers path breaks here with a green tag and no banner.
+//
+// Ordering is also load-bearing: a classic script is not deferred, so the SDK
+// reads window.axeptioSettings as it boots. setInWindow() above runs before
+// this injection, which is what makes that safe.
 const sdkUrl = data.product === 'publishers' ?
   'https://static.axept.io/tcf/sdk.js' :
   'https://static.axept.io/sdk.js';
