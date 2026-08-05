@@ -22,7 +22,7 @@ ___INFO___
     "TAG_MANAGEMENT",
     "PERSONALIZATION"
   ],
-  "description": "Load the Axeptio consent management platform and apply visitor consent choices to Google Consent Mode v2.",
+  "description": "Load the Axeptio consent management platform to collect and store visitor consent, with optional Google Consent Mode v2 support.",
   "containerContexts": [
     "WEB"
   ],
