@@ -18,6 +18,26 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const METADATA_PATH = 'metadata.yaml';
 const CHANGELOG_PATH = 'CHANGELOG.md';
 
+// Changelog sections whose bullets are worth publishing to the gallery.
+//
+// These notes are what a GTM user reads under "What's new" on the public
+// listing, and that is a different audience from CHANGELOG.md: "expand the
+// README" or "rename an internal helper" tells them nothing about the tag they
+// are installing. CHANGELOG.md still records everything — only the gallery view
+// is filtered.
+//
+// An allowlist, not a denylist, so a section added to release-please-config.json
+// later stays off the public listing until someone decides it belongs there.
+// Section names must match the `section` values in release-please-config.json,
+// plus release-please's built-in breaking-changes heading.
+const GALLERY_SECTIONS = new Set([
+  '⚠ BREAKING CHANGES',
+  'Features',
+  'Bug Fixes',
+  'Performance Improvements',
+  'Reverts',
+]);
+
 const tag = process.env.RELEASE_TAG?.trim();
 const sha = process.env.RELEASE_SHA?.trim();
 
@@ -52,12 +72,26 @@ function buildChangeNotes() {
     .slice(afterHeading + 1, nextHeading === -1 ? undefined : nextHeading)
     .trim();
 
-  // Keep changelog bullet lines (features / fixes); drop section sub-headings
-  // and links. Strip markdown commit links to keep notes readable.
-  const lines = body
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith('* ') || l.startsWith('- '))
+  // Walk the section headings so each bullet can be judged by the section it
+  // sits under, keeping only the gallery-worthy ones.
+  const kept = [];
+  let section = null;
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    const heading = line.match(/^#{3,}\s+(.*)$/);
+    if (heading) {
+      section = heading[1].trim();
+      continue;
+    }
+    if (!line.startsWith('* ') && !line.startsWith('- ')) continue;
+    // A bullet before the first heading has no section to judge it by. Keep it:
+    // dropping a real release note is worse than letting one stray line through.
+    if (section !== null && !GALLERY_SECTIONS.has(section)) continue;
+    kept.push(line);
+  }
+
+  // Normalise the bullets and strip links, which the gallery renders as plain text.
+  const lines = kept
     .map((l) => l.replace(/^[*-]\s+/, '- '))
     // remove trailing "([abc1234](url))" commit references
     .map((l) => l.replace(/\s*\(\[[^\]]+\]\([^)]+\)\)\s*$/, ''))
