@@ -22,11 +22,16 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: eed87fd1fd459bcff9f115753f00e86b2bf4d106
+    changeNotes: |-
+      - **template:** select the Brands or Publishers SDK per Project ID
+      - **template:** warn on an empty product value, not just a truthy one
+      - **template:** record why both SDK URLs must be classic scripts
+  # Older versions
   - sha: faeb174c854e823ade10c11dbca65b0c1541d2d7
     changeNotes: |-
       - restore the Apache 2.0 licence required by the GTM Gallery
       - **metadata:** restore gallery latest-version marker
-  # Older versions
   - sha: c39ef71797499bc2398fcea312238fd3562307a8
     changeNotes: |-
       - early consent update from the Axeptio cookie before the SDK loads
