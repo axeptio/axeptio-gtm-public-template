@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.3](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.2...v2.1.3) (2026-08-05)
+
+
+### Documentation
+
+* record the template test runner ([36e6105](https://github.com/axeptio/axeptio-gtm-public-template/commit/36e6105b3effe3d3df4913b826a2753c7063e893))
+
 ## [2.1.2](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.1...v2.1.2) (2026-08-05)
 
 
