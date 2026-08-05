@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.1.1](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.0...v2.1.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **template:** describe the tag in English on the gallery listing ([53ffe7e](https://github.com/axeptio/axeptio-gtm-public-template/commit/53ffe7e365c75aa05d93639e8fd4f5f57e6c71a4))
+* **template:** present Consent Mode v2 as optional in the gallery description ([125d47a](https://github.com/axeptio/axeptio-gtm-public-template/commit/125d47a049299d06ad521294bf3f2b985ea9b0ef))
+
+
+### Documentation
+
+* expand the README and correct the gallery description ([1e37fc6](https://github.com/axeptio/axeptio-gtm-public-template/commit/1e37fc6c8d5b3784660fb133e81920f7833a1d72))
+* expand the README into a template reference ([f623bd4](https://github.com/axeptio/axeptio-gtm-public-template/commit/f623bd46ad3ab562df4f8983311bbc639cb553be))
+
 ## [2.1.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.0.1...v2.1.0) (2026-08-05)
 
 
