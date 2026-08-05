@@ -22,7 +22,7 @@ ___INFO___
     "TAG_MANAGEMENT",
     "PERSONALIZATION"
   ],
-  "description": "Template for Axeptio cookie gestion",
+  "description": "Load the Axeptio consent management platform and apply visitor consent choices to Google Consent Mode v2.",
   "containerContexts": [
     "WEB"
   ],
