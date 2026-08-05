@@ -77,18 +77,28 @@ A commit / PR title must follow:
 
 **Allowed types**
 
-| Type       | Effect on version | Use for                                    |
-| ---------- | ----------------- | ------------------------------------------ |
-| `feat`     | minor bump        | a new feature                              |
-| `fix`      | patch bump        | a bug fix                                  |
-| `docs`     | none              | documentation only                         |
-| `refactor` | none              | code change that isn't a fix or feature    |
-| `perf`     | none              | performance improvement                    |
-| `test`     | none              | tests                                      |
-| `ci`       | none              | CI / GitHub Actions changes                |
-| `build`    | none              | build system or dependencies               |
-| `chore`    | none              | maintenance / tooling                      |
-| `revert`   | none              | reverting a previous commit                |
+| Type       | Effect on version | Reaches the gallery? | Use for                                 |
+| ---------- | ----------------- | -------------------- | --------------------------------------- |
+| `feat`     | minor bump        | yes                  | a new feature                           |
+| `fix`      | patch bump        | yes                  | a bug fix                               |
+| `perf`     | patch bump        | yes                  | performance improvement                 |
+| `revert`   | patch bump        | yes                  | reverting a previous commit             |
+| `docs`     | none              | no                   | documentation only                      |
+| `refactor` | none              | no                   | code change that isn't a fix or feature |
+| `build`    | none              | no                   | build system or dependencies            |
+| `test`     | none              | no                   | tests                                   |
+| `ci`       | none              | no                   | CI / GitHub Actions changes             |
+| `chore`    | none              | no                   | maintenance / tooling                   |
+
+**Pick the type by who is affected, not by how big the change feels.** A release
+publishes a new version to the Community Template Gallery, so `feat`/`fix`/`perf`/`revert`
+should be reserved for changes a GTM user installing the tag would notice. Anything
+that cannot change the tag's behaviour — a README, a CI job, a refactor — belongs in
+the lower group.
+
+Typing a CI or tooling change as `fix` is the easy mistake, because "fix" describes
+almost any repair. `fix(ci):` still has type `fix`, so it bumps the version and its
+subject is published on the public listing.
 
 A breaking change is signalled by a `!` after the type (e.g. `feat!: ...`) or a
 `BREAKING CHANGE:` footer, and triggers a major bump.

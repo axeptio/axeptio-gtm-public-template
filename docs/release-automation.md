@@ -59,6 +59,29 @@ preserved byte for byte.
 **Do not add `versions:` entries by hand.** The one thing still manual is publishing the new
 version in the gallery UI once the entry has landed.
 
+### Which commit types publish
+
+In release-please a **visible** `changelog-sections` entry is also a **releasing** one: any
+commit of that type cuts a release. That is easy to miss, because the setting reads as though it
+only controls the changelog.
+
+It has bitten twice:
+
+- `docs`, `refactor` and `build` were visible, so a README-only PR released **v2.1.2** — a gallery
+  version whose `template.tpl` was byte-identical to v2.1.1's, published with the notes
+  `Release v2.1.2`. All three are now hidden and non-releasing; none of them can change what a
+  gallery user sees, since a refactor that changed behaviour would be a `fix`.
+- `fix(ci):` has type `fix`, so a CI-only change bumped the version and put its subject on the
+  public listing in v2.0.1. Scope does not affect releasability — only the type does.
+
+`perf` and `revert` stay visible and releasing: both genuinely reach users, and a silent revert
+would be worse than a verbose changelog.
+
+`changeNotes` are filtered separately, by section, in `update-metadata-version.mjs` — only
+breaking changes, Features, Bug Fixes, Performance Improvements and Reverts reach the gallery. If
+a release ever contains nothing from those sections, the notes fall back to `Release <tag>`, which
+is the signal that something released which should not have.
+
 ## Authentication
 
 The workflow authenticates as **`axeptio-bot`**, not the default `GITHUB_TOKEN`. The
