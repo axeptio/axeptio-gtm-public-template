@@ -1,4 +1,16 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-axeptio-white.svg">
+    <img src="assets/logo-axeptio.svg" alt="Axeptio" width="180">
+  </picture>
+</p>
+
 # Axeptio CMP — Google Tag Manager Template
+
+[![GTM Gallery](https://img.shields.io/badge/GTM_Gallery-Axeptio_CMP-4285F4?logo=googletagmanager&logoColor=white)](https://tagmanager.google.com/gallery/#/owners/axeptio/templates/axeptio-gtm-public-template)
+[![Release](https://img.shields.io/github/v/release/axeptio/axeptio-gtm-public-template)](https://github.com/axeptio/axeptio-gtm-public-template/releases)
+[![License](https://img.shields.io/github/license/axeptio/axeptio-gtm-public-template)](./LICENSE)
+[![Validate gallery contract](https://github.com/axeptio/axeptio-gtm-public-template/actions/workflows/validate-gallery.yml/badge.svg)](https://github.com/axeptio/axeptio-gtm-public-template/actions/workflows/validate-gallery.yml)
 
 The official [Axeptio](https://www.axept.io/) consent management tag for Google Tag Manager
 (web containers).
