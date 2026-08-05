@@ -74,14 +74,19 @@ Everything else is licensing (`LICENSE`, `CONTRIBUTING.md`), release automation
 
 ## Build & Test
 
-There is **no build, no compile, and no test runner** — nothing to install beyond PyYAML.
-Validation is by inspection plus these checks:
+There is **no build and no compile**. There *is* a test runner for the template itself:
 
 ```bash
+npm ci && npm test                     # runs the ___TESTS___ scenarios in template.tpl
 python3 scripts/validate-gallery.py    # THE important one — see below (needs 3.7+, PyYAML)
 python3 -c "import json; json.load(open('release-please-config.json'))"
 node --check scripts/update-metadata-version.mjs
 ```
+
+`npm test` executes `test/run-tpl-tests.mjs`, which shims GTM's Test API and runs the YAML
+scenarios from the `___TESTS___` block against the **real** `___SANDBOXED_JS_FOR_WEB_TEMPLATE___`
+source — never a copy, so a regression in the template makes a scenario fail. The same scenarios
+run unchanged in the GTM UI **Tests** tab. `js-yaml` is the only dependency.
 
 `validate-gallery.py` enforces the **Community Template Gallery contract** — the LICENSE being
 Apache-2.0-only, `categories` in `___INFO___`, every `versions[].sha` real and newest-first, the
@@ -90,8 +95,10 @@ delists the template 2-3 days later with no feedback from Google, which is exact
 happened. CI runs it on every PR **and** on pushes to `master`; run it locally before touching
 `LICENSE`, `metadata.yaml` or `template.tpl`.
 
-To exercise the template itself, import `template.tpl` into a GTM container and use the
-**Tests** tab (the `___TESTS___` block).
+Add coverage by adding a scenario to the `___TESTS___` block, not by writing a separate test file
+— the block is the single source of truth and runs in both places. Scenario **names** may only use
+letters, numbers, spaces, hyphens and underscores; GTM's editor silently refuses to save a template
+whose test name contains punctuation, so the runner guards against it.
 
 ## Conventions & Patterns
 
