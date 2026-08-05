@@ -1,4 +1,8 @@
 
+# Node dev dependencies for the template test runner (test/, lib/).
+# package-lock.json IS committed so CI installs the same tree.
+node_modules/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

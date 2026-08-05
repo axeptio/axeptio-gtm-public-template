@@ -1,0 +1,13 @@
+{
+  "name": "axeptio-gtm-public-template",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tooling to unit-test the Axeptio CMP GTM custom template (template.tpl). Not published; the template itself is distributed via the GTM Community Template Gallery.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "license": "Apache-2.0"
+}
