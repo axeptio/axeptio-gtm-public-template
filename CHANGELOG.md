@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.1.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.0.1...v2.1.0) (2026-08-05)
+
+
+### Features
+
+* **template:** select the Brands or Publishers SDK per Project ID ([10e1fcc](https://github.com/axeptio/axeptio-gtm-public-template/commit/10e1fcc4af6948a344308c139652a5bf91435fbd))
+
+
+### Bug Fixes
+
+* **template:** warn on an empty product value, not just a truthy one ([cbb1c84](https://github.com/axeptio/axeptio-gtm-public-template/commit/cbb1c847fe296365266306e547c6f3198ffd2ed1))
+
+
+### Documentation
+
+* **template:** record why both SDK URLs must be classic scripts ([a162cee](https://github.com/axeptio/axeptio-gtm-public-template/commit/a162cee129dd63a83f79346348efbc144b4d26c3))
+
 ## [2.0.1](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.0.0...v2.0.1) (2026-07-28)
 
 
