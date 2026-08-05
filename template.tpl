@@ -42,16 +42,35 @@ ___TEMPLATE_PARAMETERS___
       {
         "type": "REGEX",
         "args": [
-          "^[0-9a-fA-F]{24}$"
+          "^([0-9a-fA-F]{24}|\\{\\{.+\\}\\})$"
         ],
         "enablingConditions": [],
-        "errorMessage": "Must be a valid ID"
+        "errorMessage": "Must be a valid 24-character ID or a GTM variable"
       },
       {
         "type": "NON_EMPTY"
       }
     ],
-    "help": "Enter your Project ID. You can find it in the settings menu of your axeptio project."
+    "help": "Enter your Project ID. You can find it in the settings menu of your axeptio project. You can also select a GTM variable here, for example to serve a different project per country."
+  },
+  {
+    "type": "SELECT",
+    "name": "product",
+    "displayName": "Axeptio product",
+    "macrosInSelect": true,
+    "selectItems": [
+      {
+        "value": "brands",
+        "displayValue": "Brands (standard CMP)"
+      },
+      {
+        "value": "publishers",
+        "displayValue": "Publishers (TCF)"
+      }
+    ],
+    "simpleValueType": true,
+    "defaultValue": "brands",
+    "help": "Which Axeptio product this Project ID belongs to. Brands loads the standard CMP, Publishers loads the TCF build — they are different SDKs, so this must match the project. A GTM variable can be selected here, which lets the product follow the visitor's country; pair it with a variable Project ID resolved from the same lookup."
   },
   {
     "type": "TEXT",
@@ -408,7 +427,7 @@ const main = (data) => {
     if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
       const gcm = parsed['$$googleConsentMode'];
       const consentModeStates = {};
-      // Only the consent types granted write access in ___WEB_PERMISSIONS___
+      // Only the consent types granted write access in the web permissions block
       // (access_consent). updateConsentState requires write access for *every*
       // type in the object, so passing one that isn't granted fails the
       // permission check and aborts the tag before injectScript — the SDK would
@@ -468,8 +487,40 @@ if (additionalSettings && typeof additionalSettings.length === 'number') {
 }
 setInWindow('axeptioSettings', axeptioSettings, true);
 
-if (queryPermission('inject_script', 'https://static.axept.io/sdk.js')) {
-  injectScript('https://static.axept.io/sdk.js', data.gtmOnSuccess, data.gtmOnFailure);
+// Brands and Publishers are different SDK builds, so the URL has to follow the
+// product the Project ID belongs to. Anything other than 'publishers' loads
+// Brands, which keeps tags saved before this field existed working unchanged.
+//
+// Both URLs must stay loadable as a CLASSIC script. injectScript() creates a
+// plain <script> and sandboxed JS cannot set type="module", so an ES-module
+// build fails here in the worst way: the file still returns 200, onload still
+// fires, gtmOnSuccess is still called, and the SDK silently never initialises.
+// The TCF bundle is built as an IIFE for exactly this reason — see
+// axeptio/tcf-cmp-client (ENG-13144). If that build ever reverts to esm, the
+// Publishers path breaks here with a green tag and no banner.
+//
+// Ordering is also load-bearing: a classic script is not deferred, so the SDK
+// reads window.axeptioSettings as it boots. setInWindow() above runs before
+// this injection, which is what makes that safe.
+const sdkUrl = data.product === 'publishers' ?
+  'https://static.axept.io/tcf/sdk.js' :
+  'https://static.axept.io/sdk.js';
+
+// The field accepts a GTM variable, so a geolocation lookup that misfires can
+// hand us a value we don't recognise. Falling back to Brands is the safe load,
+// but silently serving a non-TCF banner where TCF was intended is a compliance
+// problem — make it visible in Preview rather than letting it pass unnoticed.
+//
+// Compared against undefined rather than tested for truthiness: a lookup table
+// with no match yields an empty string, which is the single most likely way to
+// land here and would be skipped by a truthy check. Only undefined — a tag
+// saved before this field existed — is legitimately silent.
+if (data.product !== undefined && data.product !== 'brands' && data.product !== 'publishers') {
+  logToConsole('Axeptio GTM tag: unrecognised product "' + data.product + '", loading Brands.');
+}
+
+if (queryPermission('inject_script', sdkUrl)) {
+  injectScript(sdkUrl, data.gtmOnSuccess, data.gtmOnFailure);
 } else {
   data.gtmOnFailure();
 }
@@ -514,6 +565,10 @@ ___WEB_PERMISSIONS___
               {
                 "type": 1,
                 "string": "https://static.axept.io/sdk.js"
+              },
+              {
+                "type": 1,
+                "string": "https://static.axept.io/tcf/sdk.js"
               }
             ]
           }
