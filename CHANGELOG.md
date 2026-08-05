@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.0.1...v2.1.0) (2026-08-05)
+
+
+### Features
+
+* **template:** select the Brands or Publishers SDK per Project ID ([10e1fcc](https://github.com/axeptio/axeptio-gtm-public-template/commit/10e1fcc4af6948a344308c139652a5bf91435fbd))
+* **template:** select the Brands or Publishers SDK per Project ID ([2f207a8](https://github.com/axeptio/axeptio-gtm-public-template/commit/2f207a8676883f50be9d196d42cdf569fbbd3b98))
+
+
+### Bug Fixes
+
+* **ci:** make the gallery sync step re-runnable ([83ab9c7](https://github.com/axeptio/axeptio-gtm-public-template/commit/83ab9c7f271f12f5f18fa08e5c2957e6614f323a))
+* **ci:** open a PR for the gallery sync instead of pushing to master ([b7c2df2](https://github.com/axeptio/axeptio-gtm-public-template/commit/b7c2df2d6540d0865d09372b9dd5366cc466a9ba))
+* **ci:** open a PR for the gallery sync instead of pushing to master ([19b3bf4](https://github.com/axeptio/axeptio-gtm-public-template/commit/19b3bf40b99ca29e4f20f3f2edb4a25bb2d331f4))
+* **template:** warn on an empty product value, not just a truthy one ([cbb1c84](https://github.com/axeptio/axeptio-gtm-public-template/commit/cbb1c847fe296365266306e547c6f3198ffd2ed1))
+
+
+### Documentation
+
+* **template:** record why both SDK URLs must be classic scripts ([a162cee](https://github.com/axeptio/axeptio-gtm-public-template/commit/a162cee129dd63a83f79346348efbc144b4d26c3))
+
 ## [2.0.1](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.0.0...v2.0.1) (2026-07-28)
 
 
