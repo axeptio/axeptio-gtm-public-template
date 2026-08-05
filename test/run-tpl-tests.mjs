@@ -179,6 +179,15 @@ test('all scenario names are GTM-legal', () => {
   for (const bad of ['has.dot', 'a/b', 'a,b', 'a(b)']) {
     if (GTM_SAFE_NAME.test(bad)) throw new Error(`guard is too permissive: accepted "${bad}"`);
   }
+  // A scenario with no name at all must fail here rather than slip through:
+  // RegExp.test() stringifies its argument, so an undefined name is tested as the
+  // literal "undefined" and passes the allowlist, registering a Node test called
+  // "undefined" that looks legitimate in the output.
+  const nameless = scenarios.filter((s) => typeof s.name !== 'string' || s.name.trim() === '');
+  if (nameless.length > 0) {
+    throw new Error(`${nameless.length} scenario(s) have a missing or empty name`);
+  }
+
   const illegal = scenarios.map((s) => s.name).filter((name) => !GTM_SAFE_NAME.test(name));
   if (illegal.length > 0) {
     throw new Error(
