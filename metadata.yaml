@@ -22,12 +22,16 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: cb31476b1ae6bf5e15207a73de3240bd664883e2
+    changeNotes: |-
+      - **template:** describe the tag in English on the gallery listing
+      - **template:** present Consent Mode v2 as optional in the gallery description
+  # Older versions
   - sha: eed87fd1fd459bcff9f115753f00e86b2bf4d106
     changeNotes: |-
       - **template:** select the Brands or Publishers SDK per Project ID
       - **template:** warn on an empty product value, not just a truthy one
       - **template:** record why both SDK URLs must be classic scripts
-  # Older versions
   - sha: faeb174c854e823ade10c11dbca65b0c1541d2d7
     changeNotes: |-
       - restore the Apache 2.0 licence required by the GTM Gallery
