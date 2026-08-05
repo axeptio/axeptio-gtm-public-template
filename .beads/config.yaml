@@ -70,3 +70,4 @@ dolt:
     shared-server: true
 export:
     auto: true
+    git-add: true
