@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.2](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.1...v2.1.2) (2026-08-05)
+
+
+### Documentation
+
+* add a logo header and status badges to the README ([33280e4](https://github.com/axeptio/axeptio-gtm-public-template/commit/33280e47c4c61f736b1c812a425f40588e4337fa))
+* add a logo header and status badges to the README ([7dd246d](https://github.com/axeptio/axeptio-gtm-public-template/commit/7dd246dea66e015a0848ee929b5ebcdf858518cf))
+
 ## [2.1.1](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.0...v2.1.1) (2026-08-05)
 
 
