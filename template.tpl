@@ -898,7 +898,188 @@ ___WEB_PERMISSIONS___
 
 ___TESTS___
 
-scenarios: []
+scenarios:
+- name: Product unset loads the Brands SDK
+  code: |-
+    let injected;
+    mock('injectScript', (url) => { injected = url; });
+
+    runCode({});
+
+    assertThat(injected).isEqualTo('https://static.axept.io/sdk.js');
+- name: Product brands loads the Brands SDK
+  code: |-
+    let injected;
+    mock('injectScript', (url) => { injected = url; });
+
+    runCode({product: 'brands'});
+
+    assertThat(injected).isEqualTo('https://static.axept.io/sdk.js');
+- name: Product publishers loads the TCF SDK
+  code: |-
+    let injected;
+    mock('injectScript', (url) => { injected = url; });
+
+    runCode({product: 'publishers'});
+
+    assertThat(injected).isEqualTo('https://static.axept.io/tcf/sdk.js');
+- name: Product unset does not warn
+  code: |-
+    runCode({});
+
+    assertApi('logToConsole').wasNotCalled();
+- name: An unrecognised product falls back to Brands and warns
+  code: |-
+    let injected;
+    mock('injectScript', (url) => { injected = url; });
+
+    runCode({product: 'publisher'});
+
+    assertThat(injected).isEqualTo('https://static.axept.io/sdk.js');
+    assertApi('logToConsole').wasCalled();
+- name: An empty product value warns rather than passing silently
+  code: |-
+    let injected;
+    mock('injectScript', (url) => { injected = url; });
+
+    runCode({product: ''});
+
+    assertThat(injected).isEqualTo('https://static.axept.io/sdk.js');
+    assertApi('logToConsole').wasCalled();
+- name: A denied inject permission fails the tag instead of loading nothing
+  code: |-
+    mock('queryPermission', () => false);
+
+    runCode({product: 'publishers'});
+
+    assertApi('injectScript').wasNotCalled();
+    assertApi('gtmOnFailure').wasCalled();
+- name: The Project ID is passed through to axeptioSettings
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d'});
+
+    assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
+    assertThat(settings.platform).isEqualTo('tms-gtm');
+- name: Only allowlisted consent types reach updateConsentState
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {
+        ad_storage: 'granted',
+        analytics_storage: 'denied',
+        ad_user_data: 'granted',
+        ad_personalization: 'denied',
+        functionality_storage: 'granted',
+        personalization_storage: 'granted',
+        security_storage: 'granted'
+      }
+    });
+    let states;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertThat(states).isEqualTo({
+      ad_storage: 'granted',
+      analytics_storage: 'denied',
+      ad_user_data: 'granted',
+      ad_personalization: 'denied'
+    });
+- name: A URL-encoded consent cookie is decoded
+  code: |-
+    const raw = encodeURIComponent(JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    }));
+    let states;
+    mock('getCookieValues', () => [raw]);
+    mock('updateConsentState', (value) => { states = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+- name: An incomplete consent cookie is ignored
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': false,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+- name: An unparseable consent cookie is ignored rather than throwing
+  code: |-
+    mock('getCookieValues', () => ['not json at all']);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('injectScript').wasCalled();
+- name: Early consent flags consentUpdateAlreadySent for the SDK
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertThat(settings.consentUpdateAlreadySent).isEqualTo(true);
+- name: No early consent leaves consentUpdateAlreadySent unset
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertThat(settings.consentUpdateAlreadySent).isUndefined();
+- name: Consent Mode off skips the consent APIs entirely
+  code: |-
+    runCode({});
+
+    assertApi('setDefaultConsentState').wasNotCalled();
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('injectScript').wasCalled();
+- name: Default consent settings are applied with a wait_for_update
+  code: |-
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{region: 'FR, DE', ad_storage: 'denied'}]
+    });
+
+    assertThat(applied.region).isEqualTo(['FR', 'DE']);
+    assertThat(applied.ad_storage).isEqualTo('denied');
+    assertThat(applied.wait_for_update).isEqualTo(500);
+- name: The Google developer ID is declared
+  code: |-
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('gtagSet').wasCalledWith('developer_id.dNGFkYj', true);
+- name: Additional settings are merged into axeptioSettings
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'jsonCookieName', value: 'my_cookies'},
+        {key: '', value: 'dropped'}
+      ]
+    });
+
+    assertThat(settings.jsonCookieName).isEqualTo('my_cookies');
 
 
 ___NOTES___
