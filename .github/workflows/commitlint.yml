@@ -12,10 +12,11 @@ permissions:
 
 jobs:
   pr-title:
-    # This repo merges with merge commits, so the commits job below is the one
-    # release-please actually depends on. Keep this as hygiene, and as the
-    # safety net if squash-merging is ever enabled — then the PR title would
-    # become the commit message on master.
+    # The PR title is a release artifact, not hygiene. The repo is set to
+    # merge_commit_message: PR_TITLE, so GitHub writes the title into the *body*
+    # of the merge commit and release-please parses it like any other commit: it
+    # adds its own CHANGELOG line, and a PR titled `fix:` cuts a gallery release
+    # even when none of its commits do. See docs/release-automation.md.
     name: Validate PR title
     runs-on: ubuntu-latest
     steps:
@@ -52,6 +53,57 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
+
+      # Merging master INTO a branch makes release-please drop commits from the
+      # changelog: its traversal prunes at the merge that pulls already-released
+      # history back in. That happened for v1.1.0 — 3 of the 5 commits PR #36
+      # landed never reached CHANGELOG.md, and that section becomes the GTM
+      # Gallery changeNotes via scripts/update-metadata-version.mjs, so an
+      # incomplete section ships an incomplete public description.
+      #
+      # This lives in the `commits` job rather than a job of its own so it is
+      # enforcing straight away: `Validate commit messages` is already a
+      # required status check on master.
+      #
+      # Merges of *other* branches are left alone; only a parent that is already
+      # on the base branch trips this.
+      - name: Reject merges of the base branch into the PR branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          offenders=""
+          while IFS= read -r merge; do
+            [ -n "$merge" ] || continue
+            # Field 1 is the commit itself, field 2 its first parent (the branch
+            # it was merged into). Everything after that was merged in.
+            for parent in $(git rev-list --parents -n 1 "$merge" | cut -d' ' -f3-); do
+              if git merge-base --is-ancestor "$parent" "$BASE_SHA"; then
+                offenders="$offenders$merge"$'\n'
+                break
+              fi
+            done
+          done < <(git rev-list --merges "$BASE_SHA..$HEAD_SHA")
+
+          if [ -n "$offenders" ]; then
+            echo "This branch merges $BASE_REF into itself:"
+            printf '%s' "$offenders" | while IFS= read -r merge; do
+              git --no-pager log -1 --format='  %h %s' "$merge"
+            done
+            echo
+            echo "Rebase onto $BASE_REF instead:"
+            echo "  git fetch origin $BASE_REF && git rebase origin/$BASE_REF"
+            echo
+            echo "Merging $BASE_REF in makes release-please prune commits from the"
+            echo "changelog, and that changelog is published as the template's"
+            echo "release notes in the GTM Community Template Gallery."
+            exit 1
+          fi
+
+          echo "No $BASE_REF merges in this branch."
+
       - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: commitlint.config.mjs
