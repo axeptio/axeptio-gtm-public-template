@@ -119,8 +119,18 @@ docs: clarify the import steps
   disabled), so **every individual commit** lands on `master` and is parsed by
   release-please. The `Lint commits` CI check lints them all — a stray
   `wip: fixup` in your branch will fail the check, so tidy the history before
-  requesting review. The PR title is linted too, so it stays a valid
-  Conventional Commit.
+  requesting review.
+- **Your PR title is released too — treat it as a commit message.** GitHub puts
+  the PR title in the *body* of the merge commit, and release-please parses that
+  body like any other commit. So the title:
+  - adds its own line to `CHANGELOG.md`, on top of your commits, and
+  - **can cut a release on its own.** A PR titled `fix: tidy up the workflow`
+    publishes a patch version to the Community Template Gallery even if every
+    commit inside it is `chore`, `ci` or `docs`.
+
+  Title a PR by the *lowest-impact* type that honestly describes it, and reach
+  for `feat`/`fix` only when a GTM user installing the tag would notice. This is
+  why `Validate PR title` is a required check rather than cosmetic.
 - Releases, `CHANGELOG.md`, git tags, GitHub Releases, and the `versions:`
   history in `metadata.yaml` are **all generated automatically**. Do not edit
   versions or the changelog by hand. See
