@@ -40,10 +40,62 @@ jobs:
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.BOT_GITHUB_TOKEN }}
 
-      # The steps below run when a release was just published, when a release PR
-      # was created or updated, or both — release-please can do both in one run.
+      # Is there an open release PR carrying an unsigned commit?
+      #
+      # Deliberately NOT keyed on steps.release.outputs.pr. That output is only
+      # set when release-please creates or updates a PR *in this run*, so an
+      # already-open PR that needs no update — every push of a non-releasing
+      # `ci`/`docs`/`chore` commit — leaves it empty and the signing step never
+      # fires. An unsigned release PR would then stay unsigned forever, which is
+      # exactly what happened to #79 on 592fa3c.
+      #
+      # Runs before the checkout on purpose: `gh` needs neither a working tree
+      # nor a git repo, so this stays cheap on the runs where there is nothing
+      # to do. No output means no checkout and no GPG import.
+      - name: Detect an unsigned release PR
+        id: relpr
+        env:
+          GH_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BASE: master
+        run: |
+          set -euo pipefail
+          # Matched on all three of author, base and branch prefix — the same
+          # belt-and-braces pattern commitlint.yml uses for its exemption. The
+          # signing step force-pushes whatever this selects, so a branch merely
+          # NAMED release-please--… must not be enough to have someone's work
+          # replaced by master plus three generated files.
+          number="$(gh pr list -R "$REPO" --state open --base "$BASE" \
+            --json number,headRefName,author \
+            --jq 'map(select(.author.login == "axeptio-bot")
+                    | select(.headRefName | startswith("release-please--")))
+                  | .[0].number // empty')"
+
+          if [ -z "$number" ]; then
+            echo "No open release PR authored by axeptio-bot against ${BASE}."
+            exit 0
+          fi
+
+          # Skip when every commit is already verified, so a signed branch is
+          # not force-pushed (and its checks re-run) on every push to master.
+          signed="$(gh api "repos/$REPO/pulls/$number/commits" \
+            --jq '[.[].commit.verification.verified] | all')"
+          if [ "$signed" = "true" ]; then
+            echo "Release PR #${number} is already fully signed."
+            exit 0
+          fi
+
+          # Only the branch name is exported. The commit subject is read from
+          # git after the checkout instead of from the PR title, which is free
+          # text and would need escaping to be safe in GITHUB_OUTPUT.
+          branch="$(gh pr view "$number" -R "$REPO" --json headRefName --jq '.headRefName')"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          echo "Release PR #${number} (${branch}) has unsigned commits; will re-sign."
+
+      # The steps below run when a release was just published, when an open
+      # release PR needs signing, or both.
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        if: ${{ steps.release.outputs.release_created == 'true' || steps.release.outputs.pr != '' }}
+        if: ${{ steps.release.outputs.release_created == 'true' || steps.relpr.outputs.branch != '' }}
         with:
           # Use the bot token so the follow-up push authenticates as the bot
           # (and can bypass branch protection on master).
@@ -56,7 +108,7 @@ jobs:
       # enforces signed commits. Also sets git user.name/email from the key
       # identity and enables commit signing globally.
       - name: Import bot GPG key
-        if: ${{ steps.release.outputs.release_created == 'true' || steps.release.outputs.pr != '' }}
+        if: ${{ steps.release.outputs.release_created == 'true' || steps.relpr.outputs.branch != '' }}
         uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6.3.0
         with:
           gpg_private_key: ${{ secrets.BOT_GPG_PRIVATE_KEY }}
@@ -157,21 +209,28 @@ jobs:
       # drops the "Merge branch 'master' into release-please--…" commits the
       # action leaves behind.
       #
-      # Runs last so the metadata steps above still see a checkout of master.
+      # Runs last so the metadata steps above still see a checkout of master,
+      # and is gated on the detector at the top of the job rather than on
+      # release-please's own output — see the comment there.
       - name: Sign the release PR commit
-        if: ${{ steps.release.outputs.pr != '' }}
+        if: ${{ steps.relpr.outputs.branch != '' }}
         env:
-          # The raw JSON goes through env and is parsed with jq rather than
-          # fromJson(): never expand ${{ }} inside a run: block, and the PR
-          # title is free text.
-          RELEASE_PR: ${{ steps.release.outputs.pr }}
+          RELEASE_BRANCH: ${{ steps.relpr.outputs.branch }}
         run: |
           set -euo pipefail
-          branch="$(printf '%s' "$RELEASE_PR" | jq -r '.headBranchName')"
-          title="$(printf '%s' "$RELEASE_PR" | jq -r '.title')"
+          branch="$RELEASE_BRANCH"
 
           git fetch --quiet origin master "$branch"
           before="$(git rev-parse "origin/$branch")"
+
+          # Reuse release-please's own subject rather than the PR title: the
+          # title is free text, while this is the commit the action wrote. The
+          # oldest non-merge commit on the branch is the release commit.
+          title="$(git log --format=%s --no-merges "origin/master..origin/$branch" | tail -1)"
+          if [ -z "$title" ]; then
+            echo "No release commit found on $branch; nothing to sign." >&2
+            exit 1
+          fi
 
           git checkout -B "$branch" origin/master
           git checkout "origin/$branch" -- \
