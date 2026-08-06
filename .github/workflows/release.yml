@@ -57,13 +57,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          BASE: master
         run: |
           set -euo pipefail
-          number="$(gh pr list -R "$REPO" --state open --json number,headRefName \
-            --jq 'map(select(.headRefName | startswith("release-please--"))) | .[0].number // empty')"
+          # Matched on all three of author, base and branch prefix — the same
+          # belt-and-braces pattern commitlint.yml uses for its exemption. The
+          # signing step force-pushes whatever this selects, so a branch merely
+          # NAMED release-please--… must not be enough to have someone's work
+          # replaced by master plus three generated files.
+          number="$(gh pr list -R "$REPO" --state open --base "$BASE" \
+            --json number,headRefName,author \
+            --jq 'map(select(.author.login == "axeptio-bot")
+                    | select(.headRefName | startswith("release-please--")))
+                  | .[0].number // empty')"
 
           if [ -z "$number" ]; then
-            echo "No open release PR."
+            echo "No open release PR authored by axeptio-bot against ${BASE}."
             exit 0
           fi
 
