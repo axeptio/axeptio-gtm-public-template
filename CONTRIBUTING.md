@@ -120,6 +120,17 @@ docs: clarify the import steps
   release-please. The `Lint commits` CI check lints them all — a stray
   `wip: fixup` in your branch will fail the check, so tidy the history before
   requesting review.
+- **Rebase onto `master`; do not merge `master` into your branch.** `Lint
+  commits` fails a branch containing a `Merge branch 'master' into …` commit.
+  Use `git fetch origin master && git rebase origin/master` to pick up new
+  changes or resolve conflicts.
+
+  This is not style policing. release-please's traversal prunes at a merge that
+  pulls already-released history back in, and it then omits commits from the
+  changelog — 3 of the 5 commits in one past PR never appeared. That changelog
+  section is published verbatim as the template's release notes in the
+  Community Template Gallery, so a dropped commit is a public description that
+  misses a change users can see.
 - **Your PR title is released too — treat it as a commit message.** GitHub puts
   the PR title in the *body* of the merge commit, and release-please parses that
   body like any other commit. So the title:
