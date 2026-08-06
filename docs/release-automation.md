@@ -126,6 +126,26 @@ cannot open its release PR without a real bot account. That is what broke the fi
 `master` also enforces **signed commits**, so the metadata sync commit is GPG-signed with the
 bot's key before it is pushed.
 
+### The release PR is re-signed too
+
+release-please authenticates with a PAT, and the release commit it creates through the API is
+**not signed**. Since `master` moved from classic branch protection to rulesets, that makes the
+release PR unmergeable by anyone: `required_signatures` lives on the `Compliance` ruleset, which
+has **no bypass actor**, and rulesets grant no implicit admin bypass. v2.1.2 shipped only because
+classic protection still gave admins one; v2.1.3 was the first release to meet the rule as
+written, and it was blocked.
+
+Adding the bot to `Compliance`'s bypass would be the wrong fix — **bypass is per-ruleset, not
+per-rule**, so it would also exempt the bot from `required_status_checks` and undo the guarantee
+that the sync PR cannot merge while `Validate gallery contract` is failing.
+
+Instead the `Sign the release PR commit` step rebuilds the release branch as a single commit
+signed with the bot's GPG key, replaying `VERSION`, `CHANGELOG.md` and
+`.release-please-manifest.json` onto `master`. The branch carries nothing else and release-please
+rewrites it from scratch each run, so replacing it wholesale is safe — the same pattern the sync
+PR branch uses. It also drops the `Merge branch 'master' into release-please--…` commits the
+action leaves behind, which is why those need the `Lint commits` exemption only as a backstop.
+
 | Secret | Used for | Source |
 | --------------------- | ------------------------------------ | --------- |
 | `BOT_GITHUB_TOKEN` | release PR, release, metadata push | Org-level |
