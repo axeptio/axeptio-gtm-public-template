@@ -27,8 +27,20 @@ history before merging; `Lint commits` will reject a non-conventional commit any
 
   | Job | What it checks |
   | --- | --- |
-  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` — these are the ones release-please reads |
-  | `Validate PR title` | the PR title is a valid Conventional Commit — hygiene today, and the safety net if squash-merging is ever enabled |
+  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` — these are the ones release-please reads. Also rejects a branch that merges `master` into itself, which makes release-please prune commits from the changelog |
+  | `Validate PR title` | the PR title is a valid Conventional Commit — and, as below, a release trigger in its own right |
+
+  **The release PR is exempt from the merge check.** release-please keeps its PR
+  current by merging `master` into its own branch every time `master` moves, so
+  without an exemption the guard would block every release — `Validate commit
+  messages` is a required status check. That is safe for the reason the guard
+  exists: the branch holds only generated files, carries no contributor commits
+  that could be pruned, and its changelog is computed before the merge. The
+  exemption is scoped to `axeptio-bot` **and** a `release-please--` branch name,
+  so it cannot be claimed by naming a branch to match.
+
+  The gallery sync PR needs no exemption: `chore/sync-metadata-<tag>` is built
+  from a fresh `master` checkout with a single commit and contains no merges.
 
   This is what makes automated versioning possible: `fix:` → patch, `feat:` → minor,
   `feat!:` / `BREAKING CHANGE:` → major.
