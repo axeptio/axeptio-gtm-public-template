@@ -77,6 +77,28 @@ It has bitten twice:
 `perf` and `revert` stay visible and releasing: both genuinely reach users, and a silent revert
 would be worse than a verbose changelog.
 
+**The pull request title is also a release trigger.** The repository is set to
+`merge_commit_message: PR_TITLE`, so GitHub writes the PR title into the *body* of the merge
+commit, and release-please parses that body like any other commit:
+
+```
+subject: Merge pull request #64 from axeptio/docs/gtm-vhj-readme
+body:    docs: expand the README and correct the gallery description   <- parsed
+```
+
+Two consequences, both deliberate and kept:
+
+- Every PR contributes **its commits plus its title**, so a PR of three commits yields four
+  changelog lines. The extra line is usually a vaguer restatement of one of the commits.
+  `update-metadata-version.mjs` dedupes only exact matches, so a near-duplicate survives into the
+  gallery notes.
+- A PR **titled** `fix:` cuts a release even when none of its commits do.
+
+This is why `Validate PR title` is a required status check and not cosmetic hygiene. The
+alternative — setting `merge_commit_message: BLANK` — would make the title inert and remove the
+duplicate, at the cost of the title no longer being reviewed as a release artifact. That trade was
+considered and declined.
+
 `changeNotes` are filtered separately, by section, in `update-metadata-version.mjs` — only
 breaking changes, Features, Bug Fixes, Performance Improvements and Reverts reach the gallery. If
 a release ever contains nothing from those sections, the notes fall back to `Release <tag>`, which
