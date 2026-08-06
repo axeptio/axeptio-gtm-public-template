@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.3](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.2...v2.1.3) (2026-08-06)
+
+
+### Bug Fixes
+
+* **template:** only replay early consent from this project's cookie ([1d9b8e5](https://github.com/axeptio/axeptio-gtm-public-template/commit/1d9b8e54763936d6293393d52c7495f572510dd7))
+* **template:** only replay early consent from this project's cookie ([3043bc0](https://github.com/axeptio/axeptio-gtm-public-template/commit/3043bc023238a872f49cae303607c49029e15270))
+
 ## [2.1.2](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.1...v2.1.2) (2026-08-05)
 
 
