@@ -67,7 +67,21 @@ jobs:
       #
       # Merges of *other* branches are left alone; only a parent that is already
       # on the base branch trips this.
+      #
+      # release-please is exempt. Its action keeps the release PR current by
+      # merging master into its own branch every time master moves, so the guard
+      # blocks the release outright — `Validate commit messages` is a required
+      # check. The exemption is safe for the reason the guard exists: that branch
+      # holds only generated files (VERSION, CHANGELOG.md, the manifest), carries
+      # no contributor commits that could be pruned, and its changelog is
+      # computed before the merge, not after. Scoped to the bot's own branch so a
+      # contributor cannot opt out by naming a branch `release-please--…`.
+      #
+      # The gallery sync PR is unaffected: release.yml builds
+      # `chore/sync-metadata-<tag>` from a fresh master checkout with a single
+      # commit, so it contains no merge commits at all.
       - name: Reject merges of the base branch into the PR branch
+        if: "${{ !(github.event.pull_request.user.login == 'axeptio-bot' && startsWith(github.head_ref, 'release-please--')) }}"
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
