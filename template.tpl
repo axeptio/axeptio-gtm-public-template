@@ -416,7 +416,31 @@ const main = (data) => {
 
   // Early consent update from Axeptio cookie (runs before SDK loads).
   // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
-  const cookieValues = getCookieValues('axeptio_cookies');
+  //
+  // Every Axeptio project on a domain writes the SAME cookie name, so the
+  // payload has to be checked against this tag's configuration before its
+  // consent is replayed — otherwise a visitor who consented under one project
+  // gets that project's Consent Mode state applied when the other one loads.
+  // Both guards below fail safe: skipping only forgoes the head start, the SDK
+  // still applies the visitor's real choices once it boots.
+  //
+  // Guard 1 - product. Only the Brands SDK writes $$googleConsentMode into the
+  // cookie; the TCF build calls gtag('consent', 'update') directly and its
+  // payload has no such key. So on a Publishers tag that key can only have come
+  // from a different project. This is the guard that does the work, because
+  // Cookies Version is optional and most tags leave it empty.
+  // It is coupled to the TCF build: if that ever starts writing the key,
+  // Publishers silently loses the early update (never applies a wrong one).
+  // Same class of assumption as the classic-script coupling documented below.
+  //
+  // Guard 2 - configuration. The cookie carries no project id, so the only
+  // discriminator left is $$cookiesVersion.name, which both SDKs write and
+  // which is the value this tag collects as data.cookiesVersion. Compared only
+  // when BOTH sides are non-empty: a strict match would disable early consent
+  // for every tag that leaves the field blank, which is the default.
+  // Residual gap: two Brands projects where either tag leaves it blank are
+  // still indistinguishable.
+  const cookieValues = (data.product === 'publishers') ? undefined : getCookieValues('axeptio_cookies');
   if (cookieValues && cookieValues.length > 0) {
     const raw = cookieValues[0];
     let parsed = JSON.parse(raw);
@@ -424,7 +448,13 @@ const main = (data) => {
       const decoded = decodeUriComponent(raw);
       parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
     }
-    if (parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
+    const cookieConfig = (parsed && typeof parsed['$$cookiesVersion'] === 'object') ? parsed['$$cookiesVersion'] : null;
+    const cookieVersionName = cookieConfig ? cookieConfig.name : undefined;
+    const configMismatch = !!data.cookiesVersion && !!cookieVersionName && cookieVersionName !== data.cookiesVersion;
+    if (configMismatch) {
+      logToConsole('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "' + cookieVersionName + '"');
+    }
+    if (!configMismatch && parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
       const gcm = parsed['$$googleConsentMode'];
       const consentModeStates = {};
       // Only the consent types granted write access in the web permissions block
@@ -1042,6 +1072,72 @@ scenarios:
     runCode({isComoEnabled: true, defaultSettings: []});
 
     assertThat(settings.consentUpdateAlreadySent).isUndefined();
+- name: A Publishers tag never replays consent from the shared cookie
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'brands-base', identifier: 'aaaaaaaaaaaaaaaaaaaaaaaa'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: [], product: 'publishers'});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('injectScript').wasCalled();
+- name: A cookie written by another configuration is ignored
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'other-project-base', identifier: 'bbbbbbbbbbbbbbbbbbbbbbbb'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: 'my-project-base'});
+
+    assertApi('updateConsentState').wasNotCalled();
+- name: A cookie written by this configuration is applied
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'my-project-base', identifier: 'bbbbbbbbbbbbbbbbbbbbbbbb'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: 'my-project-base'});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+- name: A blank Cookies Version still applies the cookie
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'my-project-base', identifier: 'bbbbbbbbbbbbbbbbbbbbbbbb'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: ''});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+- name: A cookie with no configuration name still applies
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: 'my-project-base'});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
 - name: Consent Mode off skips the consent APIs entirely
   code: |-
     runCode({});
