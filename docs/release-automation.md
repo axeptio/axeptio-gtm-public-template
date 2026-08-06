@@ -141,7 +141,14 @@ that the sync PR cannot merge while `Validate gallery contract` is failing.
 
 Instead the `Sign the release PR commit` step rebuilds the release branch as a single commit
 signed with the bot's GPG key, replaying `VERSION`, `CHANGELOG.md` and
-`.release-please-manifest.json` onto `master`. The branch carries nothing else and release-please
+`.release-please-manifest.json` onto `master`.
+
+It is gated on a `Detect an unsigned release PR` step that asks GitHub whether an open
+`release-please--*` PR exists and whether all of its commits are verified — **not** on
+release-please's own `pr` output. That output is set only when the action creates or updates a PR
+*in that run*, so pushing a non-releasing `ci` / `docs` / `chore` commit leaves it empty and an
+already-unsigned PR would never be repaired. The verified check also means a branch that is
+already signed is not force-pushed, and its checks not re-run, on every push to `master`. The branch carries nothing else and release-please
 rewrites it from scratch each run, so replacing it wholesale is safe — the same pattern the sync
 PR branch uses. It also drops the `Merge branch 'master' into release-please--…` commits the
 action leaves behind, which is why those need the `Lint commits` exemption only as a backstop.
