@@ -8,3 +8,7 @@ node_modules/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Local planning notes from the superpowers skill. Scratch working files, not
+# project documentation — they have no place in a public gallery repository.
+docs/superpowers/
