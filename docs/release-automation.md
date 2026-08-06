@@ -68,8 +68,17 @@ reverse chronological order.
 built-ins and edits the file textually, so the license header and existing entries are
 preserved byte for byte.
 
-**Do not add `versions:` entries by hand.** The one thing still manual is publishing the new
-version in the gallery UI once the entry has landed.
+**Do not add `versions:` entries by hand.**
+
+**There is no manual publish step.** Merging the sync PR *is* the publication: Google polls the
+repository and the new version appears in the gallery
+[typically within 2 to 3 days](https://developers.google.com/tag-platform/tag-manager/templates/gallery).
+There is no author dashboard and no gallery UI to push a version from — which is also why the
+template has no install counts, ratings or review-status notifications (ENG-13164), and why a
+contract breach delists silently instead of failing a submission.
+
+The only manual submissions are the **initial listing**, and a **re-submission if the template is
+delisted** for breaking the gallery contract. Neither happens on a normal release.
 
 ### Which commit types publish
 
