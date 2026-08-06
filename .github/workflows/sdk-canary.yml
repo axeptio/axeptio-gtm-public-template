@@ -1,0 +1,40 @@
+name: SDK classic-script canary
+
+# template.tpl injects the SDK with GTM's injectScript(), which creates a plain
+# <script>. Sandboxed JS cannot set type="module", so both bundles MUST stay
+# loadable as classic scripts. If one reverts to an ES-module build the failure
+# is silent and severe: the file still returns 200, onload fires, gtmOnSuccess
+# is called, and the SDK never initialises — a green tag with no banner and no
+# consent collected. On a TCF property that is a compliance failure that looks
+# fine.
+#
+# Deliberately NOT a pull_request check and NOT part of validate-gallery.py:
+# that script is a required status check on master, and making it depend on an
+# external CDN would let a blip block every unrelated PR. This watches the
+# published bundles instead, on a schedule, and fails loudly when they drift.
+on:
+  schedule:
+    # Mondays 07:00 UTC.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: SDK bundles parse as classic scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      # The two URLs template.tpl can inject: Brands and Publishers (TCF).
+      # Keep this list in sync with the sdkUrl selection in template.tpl.
+      - run: |
+          node scripts/check-classic-script.mjs \
+            https://static.axept.io/sdk.js \
+            https://static.axept.io/tcf/sdk.js
