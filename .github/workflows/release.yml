@@ -40,19 +40,23 @@ jobs:
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.BOT_GITHUB_TOKEN }}
 
-      # The steps below only run when a release was just published.
+      # The steps below run when a release was just published, when a release PR
+      # was created or updated, or both — release-please can do both in one run.
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        if: ${{ steps.release.outputs.release_created == 'true' }}
+        if: ${{ steps.release.outputs.release_created == 'true' || steps.release.outputs.pr != '' }}
         with:
           # Use the bot token so the follow-up push authenticates as the bot
           # (and can bypass branch protection on master).
           token: ${{ secrets.BOT_GITHUB_TOKEN }}
+          # Full history: the release-PR signing step below replays the
+          # generated files onto master and needs both branches.
+          fetch-depth: 0
 
       # Import the bot's GPG key so the metadata commit is signed — master
       # enforces signed commits. Also sets git user.name/email from the key
       # identity and enables commit signing globally.
       - name: Import bot GPG key
-        if: ${{ steps.release.outputs.release_created == 'true' }}
+        if: ${{ steps.release.outputs.release_created == 'true' || steps.release.outputs.pr != '' }}
         uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6.3.0
         with:
           gpg_private_key: ${{ secrets.BOT_GPG_PRIVATE_KEY }}
@@ -128,3 +132,60 @@ jobs:
           # Enabling auto-merge twice is not an error worth failing the job for.
           gh pr merge "$branch" --merge --auto --delete-branch || \
             echo "Could not enable auto-merge; the sync PR is open and needs a manual merge."
+
+      # release-please authenticates with a PAT, and the release commit it
+      # creates through the API is NOT signed. master requires verified
+      # signatures via the Compliance ruleset, which has NO bypass actor, so an
+      # unsigned commit makes the release PR unmergeable by anyone — including
+      # an admin. That blocked v2.1.3.
+      #
+      # v2.1.2 shipped only because classic branch protection still granted
+      # admins an implicit bypass. Migrating master to rulesets (gtm-3od)
+      # removed it, which is correct — rulesets have no implicit admin bypass —
+      # and this is simply the first release to meet the rule as written.
+      #
+      # Adding the bot to the Compliance ruleset's bypass is NOT the fix: bypass
+      # is per-RULESET, not per-rule, so it would also exempt the bot from
+      # required_status_checks and undo the guarantee that the sync PR cannot
+      # merge while the gallery contract check is failing.
+      #
+      # Instead, rebuild the release PR branch as a single commit signed with
+      # the bot's GPG key — the same key and the same checkout-B-and-force-push
+      # pattern the sync PR above already uses. The branch only ever carries
+      # three generated files and release-please rewrites it from scratch on
+      # every run, so replacing it wholesale is safe. Replaying onto master also
+      # drops the "Merge branch 'master' into release-please--…" commits the
+      # action leaves behind.
+      #
+      # Runs last so the metadata steps above still see a checkout of master.
+      - name: Sign the release PR commit
+        if: ${{ steps.release.outputs.pr != '' }}
+        env:
+          # The raw JSON goes through env and is parsed with jq rather than
+          # fromJson(): never expand ${{ }} inside a run: block, and the PR
+          # title is free text.
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch="$(printf '%s' "$RELEASE_PR" | jq -r '.headBranchName')"
+          title="$(printf '%s' "$RELEASE_PR" | jq -r '.title')"
+
+          git fetch --quiet origin master "$branch"
+          before="$(git rev-parse "origin/$branch")"
+
+          git checkout -B "$branch" origin/master
+          git checkout "origin/$branch" -- \
+            VERSION CHANGELOG.md .release-please-manifest.json
+
+          if git diff --cached --quiet; then
+            echo "Release PR branch matches master; nothing to sign."
+            exit 0
+          fi
+
+          git commit -S -m "$title"
+
+          # Idempotent: on a re-run the branch is rebuilt from the same inputs.
+          # --force-with-lease pinned to the SHA read above, so a concurrent
+          # release-please update is rejected rather than silently discarded.
+          git push --force-with-lease="$branch:$before" origin "HEAD:refs/heads/$branch"
+          echo "Re-signed $branch as $(git rev-parse --short HEAD)."
