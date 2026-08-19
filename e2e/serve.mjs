@@ -72,7 +72,12 @@ const server = createServer(async (req, res) => {
     return send(res, 200, body, CONTENT_TYPES[extname(filePath)] || 'application/octet-stream');
   } catch (err) {
     if (err.code === 'ENOENT') return send(res, 404, `not found: ${path}`);
-    return send(res, 500, String(err && err.stack ? err.stack : err));
+    // Log the stack rather than returning it. Nothing is lost for debugging —
+    // playwright.config.mjs pipes this server's stderr into the test output — and
+    // a response body is the wrong place for a stack trace even on a fixture
+    // server bound to 127.0.0.1 (CodeQL js/stack-trace-exposure).
+    console.error(`fixture server: 500 for ${path}`, err);
+    return send(res, 500, 'internal error; see the fixture server log');
   }
 });
 
