@@ -1176,6 +1176,61 @@ scenarios:
     });
 
     assertThat(settings.jsonCookieName).isEqualTo('my_cookies');
+- name: Cookie settings are passed through to axeptioSettings
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      cookiesVersion: 'my-config',
+      cookiesDomain: '.example.com',
+      cookiesSecure: true,
+      dataLayerName: 'customDataLayer',
+      triggerGTMEvents: 'update_only'
+    });
+
+    assertThat(settings.cookiesVersion).isEqualTo('my-config');
+    assertThat(settings.userCookiesDomain).isEqualTo('.example.com');
+    assertThat(settings.userCookiesSecure).isTrue();
+    assertThat(settings.dataLayerName).isEqualTo('customDataLayer');
+    assertThat(settings.triggerGTMEvents).isEqualTo('update_only');
+- name: The cookies duration is coerced to a number
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', cookiesDuration: '180'});
+
+    assertThat(settings.userCookiesDuration).isNumber();
+    assertThat(settings.userCookiesDuration).isEqualTo(180);
+- name: The server-side postConsentUrl reaches axeptioSettings
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', postConsentUrl: 'https://sgtm.example.com/axeptio'});
+
+    assertThat(settings.postConsentUrl).isEqualTo('https://sgtm.example.com/axeptio');
+- name: Consent Mode passthrough flags are forwarded to gtagSet
+  code: |-
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      ads_data_redaction: true,
+      url_passthrough: false
+    });
+
+    assertApi('gtagSet').wasCalledWith('ads_data_redaction', true);
+    assertApi('gtagSet').wasCalledWith('url_passthrough', false);
+- name: gtmOnSuccess fires when the SDK script loads
+  code: |-
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+
+    runCode({id: '6a22da4da7d365c1e246783d'});
+
+    assertApi('gtmOnSuccess').wasCalled();
+    assertApi('gtmOnFailure').wasNotCalled();
 
 
 ___NOTES___
