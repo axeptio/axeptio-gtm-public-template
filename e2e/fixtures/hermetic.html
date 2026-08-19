@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Axeptio GTM template — hermetic harness</title>
+</head>
+<body>
+  <h1>Axeptio GTM template — hermetic harness</h1>
+  <p>
+    Loads the real <code>___SANDBOXED_JS_FOR_WEB_TEMPLATE___</code> and
+    <code>___WEB_PERMISSIONS___</code> from <code>template.tpl</code> and runs the
+    template the way GTM would, with permissions enforced. Driven by
+    <code>e2e/hermetic.spec.mjs</code>.
+  </p>
+
+  <script type="module">
+    import { createRuntime, PermissionError } from './gtm-runtime.js';
+
+    // Fetched once at load so window.runTemplate() can stay synchronous — the
+    // ordering assertions depend on setInWindow and injectScript happening in one
+    // uninterrupted run, with no await between them.
+    const [sandboxSource, permissions] = await Promise.all([
+      fetch('/template/sandbox.js').then((r) => r.text()),
+      fetch('/template/permissions.json').then((r) => r.json()),
+    ]);
+
+    // `data` is GTM's tag configuration. new Function gives the sandboxed source
+    // the same two free variables GTM does — require and data — without any
+    // bundling step, so what runs here is byte-for-byte what ships.
+    const compiled = new Function('require', 'data', sandboxSource);
+
+    window.runTemplate = (data) => {
+      delete window.axeptioSettings;
+      delete window.__axeptioStub;
+      window.dataLayer = [];
+
+      const runtime = createRuntime(permissions);
+      // GTM hands these to injectScript as the script's onload/onerror, so they
+      // fire after runTemplate has already returned. They live on window and are
+      // read via window.gtmCallbacks() once the SDK has actually booted; a
+      // snapshot taken here would always show zero.
+      const gtmCallbacks = window.__gtmCallbacks = { successes: 0, failures: 0 };
+      const withCallbacks = Object.assign({}, data, {
+        gtmOnSuccess: () => { gtmCallbacks.successes += 1; },
+        gtmOnFailure: () => { gtmCallbacks.failures += 1; },
+      });
+
+      let error = null;
+      try {
+        compiled(runtime.require, withCallbacks);
+      } catch (err) {
+        // A permission failure is a legitimate outcome to assert on, not a harness
+        // crash: it is exactly how GTM aborts a tag in production.
+        error = {
+          name: err && err.name,
+          message: String(err && err.message),
+          isPermissionError: err instanceof PermissionError,
+          permission: err && err.permission,
+        };
+      }
+
+      return {
+        error,
+        settings: window.axeptioSettings ? JSON.parse(JSON.stringify(window.axeptioSettings)) : null,
+        dataLayer: JSON.parse(JSON.stringify(window.dataLayer)),
+        calls: runtime.calls.map((c) => c.api),
+      };
+    };
+
+    // The stub SDK is injected asynchronously, so the spec waits on these rather
+    // than on runTemplate's return value.
+    window.sdkBoot = () => window.__axeptioStub || null;
+    window.gtmCallbacks = () => window.__gtmCallbacks;
+
+    window.__harnessReady = true;
+  </script>
+</body>
+</html>

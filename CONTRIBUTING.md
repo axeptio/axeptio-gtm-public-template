@@ -39,6 +39,31 @@ Scenario **names** may only contain letters, numbers, spaces, hyphens and unders
 silently refuses to save a template whose test name contains punctuation such as `.` or `/`, so the
 runner fails the build on one instead of letting you discover it in the UI.
 
+Two further layers gate every pull request. Neither needs credentials or network access, so both
+also run on pull requests from forks:
+
+```bash
+npm run validate   # couplings between the sections of template.tpl
+npm run e2e        # the real sandboxed JS in a real browser (Playwright)
+```
+
+`npm run validate` checks what no scenario can see, because scenarios call `runCode()` with a
+hand-written `data` object and — exactly as in the GTM UI — with permission checks stubbed out. It
+fails if a consent type in `allowedConsentTypes` is not writable through the `access_consent`
+permission (which would make `updateConsentState` abort the tag *before* `injectScript`, so the SDK
+never loads), if a `data.<name>` read has no matching `___TEMPLATE_PARAMETERS___` entry, if an
+injected URL is outside `inject_script`, or if a `require()`d API is undocumented or unpermitted.
+
+`npm run e2e` runs that same sandboxed source in headless Chromium with the template's **real**
+permissions enforced, and proves the contract the unit layer can only infer: that an SDK loaded as
+a classic `<script>` actually sees `window.axeptioSettings`. It is hermetic — the injected URL is
+permission-checked as written and then rewritten to a local stub, so nothing leaves the machine.
+The genuine bundles are covered separately by the weekly SDK canary.
+
+If you add a permission, a parameter or an SDK URL, expect `npm run validate` to have an opinion —
+that is the point. Keeping the `allowedConsentTypes` list and the `access_consent` permission in
+sync used to be enforced only by a code comment.
+
 ## The gallery contract
 
 This template is published through the
