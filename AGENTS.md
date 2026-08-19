@@ -147,6 +147,8 @@ There is **no build and no compile**. There *is* a test runner for the template 
 
 ```bash
 npm ci && npm test                     # runs the ___TESTS___ scenarios in template.tpl
+npm run validate                       # cross-section couplings (consent/permissions, params, URLs)
+npm run e2e                            # real sandboxed JS in headless Chromium, permissions enforced
 python3 scripts/validate-gallery.py    # THE important one — see below (needs 3.7+, PyYAML)
 python3 -c "import json; json.load(open('release-please-config.json'))"
 node --check scripts/update-metadata-version.mjs
