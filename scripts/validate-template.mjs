@@ -28,7 +28,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadTemplate } from '../lib/template.mjs';
-import { createPermissionChecker, matchesAnyPattern } from '../lib/gtm-sandbox.mjs';
+import { createPermissionChecker } from '../lib/gtm-sandbox.mjs';
 
 const TPL_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'template.tpl');
 
