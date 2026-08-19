@@ -4,9 +4,13 @@
   "private": true,
   "description": "Tooling to unit-test the Axeptio CMP GTM custom template (template.tpl). Not published; the template itself is distributed via the GTM Community Template Gallery.",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "validate": "node scripts/validate-template.mjs",
+    "e2e": "playwright test",
+    "serve:e2e": "node e2e/serve.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "js-yaml": "^4.1.0"
   },
   "license": "Apache-2.0"

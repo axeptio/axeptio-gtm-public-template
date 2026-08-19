@@ -1,9 +1,23 @@
 name: Test template
 
-# Runs the ___TESTS___ scenarios embedded in template.tpl against the real
-# ___SANDBOXED_JS_FOR_WEB_TEMPLATE___ source. Google ships no CLI runner for GTM
-# custom templates — test/run-tpl-tests.mjs shims the Test API so the same
-# scenarios that run in the GTM UI "Tests" tab also gate every PR.
+# The behavioural gate for every PR, in three layers:
+#
+#   npm test        — the ___TESTS___ scenarios embedded in template.tpl, run
+#                     against the real ___SANDBOXED_JS_FOR_WEB_TEMPLATE___ source.
+#                     Google ships no CLI runner for GTM custom templates, so
+#                     lib/gtm-test-api.mjs reimplements the Test API and the same
+#                     scenarios that run in the GTM UI "Tests" tab gate every PR.
+#   npm run validate — the couplings *between* template.tpl's sections, which no
+#                     scenario can see: consent types vs. access_consent, data.<x>
+#                     reads vs. ___TEMPLATE_PARAMETERS___, injected URLs vs.
+#                     inject_script.
+#   npm run e2e     — the real sandboxed JS in a real browser with permissions
+#                     actually enforced, proving a classic <script> sees
+#                     window.axeptioSettings.
+#
+# All three are hermetic: no secrets, no network egress, so they run identically
+# on fork PRs. The layers that need a real GTM container live in their own
+# workflows and never gate.
 on:
   pull_request:
   push:
@@ -22,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
 
       # `npm ci` rather than `npm install`: it installs exactly the committed
@@ -30,3 +44,33 @@ jobs:
       - run: npm ci
 
       - run: npm test
+
+      - run: npm run validate
+
+      # Cache the browser binary, keyed on the resolved Playwright version so a
+      # dependency bump cannot silently reuse a mismatched browser.
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # A cache hit restores the browser but not the OS packages it links against.
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - run: npm run e2e
+
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -3,6 +3,11 @@
 # package-lock.json IS committed so CI installs the same tree.
 node_modules/
 
+# Playwright output from the hermetic browser suite (e2e/).
+test-results/
+playwright-report/
+blob-report/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
