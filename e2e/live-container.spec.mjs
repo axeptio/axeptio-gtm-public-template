@@ -35,15 +35,27 @@ async function waitForSettings(page) {
   return page.evaluate(() => window.axeptioSettings);
 }
 
-// Which bundle the browser actually fetched. Asserting on this rather than on the
-// tag's configuration is the point: it is the difference between "the template
-// decided to load Brands" and "Brands was loaded".
-async function loadedSdkUrls(page) {
+// Which bundle the browser actually fetched, as exact pathnames. Asserting on this
+// rather than on the tag's configuration is the point: it is the difference between
+// "the template decided to load Brands" and "Brands was loaded".
+//
+// Parsed rather than substring-matched, for two reasons. Hostname: `includes` would
+// accept https://evil.example/static.axept.io (CodeQL js/incomplete-url-substring-
+// sanitization). Pathname: '/tcf/sdk.js'.includes('/sdk.js') is true, so a substring
+// test for the Brands bundle silently passes when only the TCF bundle loaded.
+async function loadedSdkPaths(page) {
   return page.evaluate(() =>
     performance
       .getEntriesByType('resource')
-      .map((e) => e.name)
-      .filter((n) => n.includes('static.axept.io')));
+      .map((entry) => {
+        try {
+          return new URL(entry.name);
+        } catch {
+          return null;
+        }
+      })
+      .filter((url) => url && url.hostname === 'static.axept.io')
+      .map((url) => url.pathname));
 }
 
 test('Brands: the container fires the tag and the real SDK boots', async ({ page }) => {
@@ -57,10 +69,8 @@ test('Brands: the container fires the tag and the real SDK boots', async ({ page
 
   // The Brands bundle, not the TCF one — the two live at different paths and the
   // choice is made by the template's product field.
-  await expect.poll(() => loadedSdkUrls(page), { timeout: BOOT_TIMEOUT })
-    .toContainEqual(expect.stringContaining('/sdk.js'));
-  const urls = await loadedSdkUrls(page);
-  expect(urls.some((u) => u.includes('/tcf/sdk.js'))).toBe(false);
+  await expect.poll(() => loadedSdkPaths(page), { timeout: BOOT_TIMEOUT }).toContain('/sdk.js');
+  expect(await loadedSdkPaths(page)).not.toContain('/tcf/sdk.js');
 
   // The SDK read the settings and mounted. This is the assertion the hermetic
   // suite can only simulate, because it stubs the bundle.
@@ -74,8 +84,7 @@ test('Publishers: the TCF build boots and exposes the IAB API', async ({ page })
   expect(settings.clientId).toBe(CLIENT_ID);
   expect(settings.platform).toBe('tms-gtm');
 
-  await expect.poll(() => loadedSdkUrls(page), { timeout: BOOT_TIMEOUT })
-    .toContainEqual(expect.stringContaining('/tcf/sdk.js'));
+  await expect.poll(() => loadedSdkPaths(page), { timeout: BOOT_TIMEOUT }).toContain('/tcf/sdk.js');
 
   // __tcfapi is the IAB TCF entry point. Its presence is the cleanest possible
   // evidence that the TCF build — not merely some Axeptio build — is running.
@@ -92,15 +101,14 @@ test('the two fixtures load different bundles', async ({ page }) => {
   // it would pass whatever the container did.
   await page.goto(BRANDS);
   await waitForSettings(page);
-  await expect.poll(() => loadedSdkUrls(page), { timeout: BOOT_TIMEOUT }).not.toHaveLength(0);
-  const onBrands = await loadedSdkUrls(page);
+  await expect.poll(() => loadedSdkPaths(page), { timeout: BOOT_TIMEOUT }).toContain('/sdk.js');
+  const onBrands = await loadedSdkPaths(page);
 
   await page.goto(PUBLISHERS);
   await waitForSettings(page);
-  await expect.poll(() => loadedSdkUrls(page), { timeout: BOOT_TIMEOUT }).not.toHaveLength(0);
-  const onPublishers = await loadedSdkUrls(page);
+  await expect.poll(() => loadedSdkPaths(page), { timeout: BOOT_TIMEOUT }).toContain('/tcf/sdk.js');
+  const onPublishers = await loadedSdkPaths(page);
 
-  const tcf = (urls) => urls.some((u) => u.includes('/tcf/sdk.js'));
-  expect(tcf(onBrands)).toBe(false);
-  expect(tcf(onPublishers)).toBe(true);
+  expect(onBrands).not.toContain('/tcf/sdk.js');
+  expect(onPublishers).not.toContain('/sdk.js');
 });
