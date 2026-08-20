@@ -406,8 +406,15 @@ const main = (data) => {
   gtagSet('ads_data_redaction', data.ads_data_redaction);
   gtagSet('url_passthrough', data.url_passthrough);
   gtagSet('developer_id.dNGFkYj', true);
-  // Set default consent state(s)
-  data.defaultSettings.forEach(settings => {
+  // Set default consent state(s).
+  //
+  // The `|| []` is load-bearing, not defensive habit. GTM sends nothing at all for
+  // an empty PARAM_TABLE, so a tag with Consent Mode enabled and no default rows -
+  // a reasonable thing to configure, since the checkbox reads as "turn it on" -
+  // arrives here with data.defaultSettings undefined. Iterating that threw a
+  // TypeError before injectScript ran, so the failure was not a missing consent
+  // default: the SDK never loaded and the visitor got no CMP at all.
+  (data.defaultSettings || []).forEach(settings => {
     const defaultData = parseCommandData(settings);
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
     defaultData.wait_for_update = 500;
@@ -1223,6 +1230,16 @@ scenarios:
 
     assertApi('gtagSet').wasCalledWith('ads_data_redaction', true);
     assertApi('gtagSet').wasCalledWith('url_passthrough', false);
+- name: Consent Mode with no default rows still loads the SDK
+  code: |-
+    // GTM sends nothing for an empty PARAM_TABLE, so defaultSettings is absent
+    // rather than an empty array. This used to throw before injectScript, so the
+    // tag shipped no CMP at all rather than merely no consent default.
+    runCode({id: '6a22da4da7d365c1e246783d', isComoEnabled: true});
+
+    assertApi('setDefaultConsentState').wasNotCalled();
+    assertApi('injectScript').wasCalled();
+    assertApi('gtmOnFailure').wasNotCalled();
 - name: gtmOnSuccess fires when the SDK script loads
   code: |-
     mock('injectScript', (url, onSuccess) => { onSuccess(); });
