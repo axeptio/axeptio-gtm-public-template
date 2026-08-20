@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.5](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.4...v2.1.5) (2026-08-20)
+
+
+### Bug Fixes
+
+* **template:** keep the JSON blocks in GTM's canonical escaping ([25f12f6](https://github.com/axeptio/axeptio-gtm-public-template/commit/25f12f69cceac2e56191fa41839299163f332619))
+
 ## [2.1.4](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.3...v2.1.4) (2026-08-20)
 
 
