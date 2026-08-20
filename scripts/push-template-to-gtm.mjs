@@ -26,23 +26,18 @@
 // Auth: Application Default Credentials. In CI these come from
 // google-github-actions/auth via Workload Identity Federation — there is no
 // service-account key anywhere, which matters because this repository is public.
-// Locally, run `npm run gtm:login`, which is:
+// Locally there is no login step at all: run `npm run gtm:compile` and the script
+// mints its own token by impersonating the CI service account through the gcloud
+// CLI. It needs gcloud authenticated (`gcloud auth list`), gh authenticated so the
+// container ids can be read from the repository variables, and
+// roles/iam.serviceAccountTokenCreator on that service account.
 //
-//   gcloud auth application-default login \
-//     --impersonate-service-account=gtm-ci@axeptio-gtm-ci.iam.gserviceaccount.com
-//
-// Impersonation rather than a scoped user login, for two reasons.
-//
-// First, it is the only thing that works here. The tagmanager.* scopes are
-// restricted in the axeptio Workspace, so `application-default login --scopes=...`
-// is refused with "This app is blocked" before the browser flow completes. Under
-// impersonation the *user* consent stays on the default scopes the org already
-// allows, and the restricted scopes are requested when minting the service
-// account's token, where no user consent is involved.
-//
-// Second, it makes a local run use the same identity as CI, so "works on my
-// machine" means rather more than usual. It needs roles/iam.serviceAccountTokenCreator
-// on the service account.
+// Impersonation rather than Application Default Credentials, because ADC is not
+// available here: the tagmanager.* scopes are restricted in the Axeptio Workspace,
+// so every form of `gcloud auth application-default login` — plain, with --scopes,
+// and with --impersonate-service-account — is refused with "This app is blocked".
+// Impersonating through the CLI reuses credentials you already have, needs no new
+// consent, and runs as the same identity CI does.
 //
 // The SCOPES list below is honoured for service-account credentials, where the
 // library requests them as it mints the token — which covers both CI and the
@@ -215,8 +210,6 @@ class ApiError extends Error {
 }
 
 async function api(method, path, { query, body } = {}) {
-  if (!client) client = await auth.getClient();
-
   const url = new URL(`${API_BASE}/${path}`);
   for (const [k, v] of Object.entries(query || {})) {
     if (v !== undefined && v !== null) url.searchParams.set(k, v);
@@ -256,9 +249,10 @@ async function api(method, path, { query, body } = {}) {
     if (!res.ok && /ACCESS_TOKEN_SCOPE_INSUFFICIENT/.test(text)) {
       throw new Error(
         'Credentials lack the Tag Manager scopes.\n' +
-        '  Run `npm run gtm:login` and try again.\n' +
-        '  (A plain `gcloud auth application-default login` is not enough: a user\n' +
-        '   credential cannot have scopes added after the fact.)',
+        '  In CI: check that the workload identity provider and service account in\n' +
+        '  GCP_WIF_PROVIDER / GCP_SERVICE_ACCOUNT are correct.\n' +
+        '  Locally: this should not happen — the token is minted with the scopes\n' +
+        '  above. Check `gcloud auth list` and your token-creator role.',
       );
     }
 
