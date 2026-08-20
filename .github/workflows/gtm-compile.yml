@@ -16,12 +16,14 @@ name: GTM compile check
 # Does not gate merges. It needs credentials, so it cannot run on pull requests
 # from forks, and a required check that is structurally unavailable to some
 # contributors would block them permanently.
+# Pull requests only, deliberately. On master, gtm-e2e.yml publishes the template
+# and create_version fails loud on compilerError — a stronger check than
+# quick_preview, since it actually produces a version. Running both there would be
+# redundant, and because they share the gtm-api concurrency group it also meant one
+# was cancelled while queued behind the other.
 on:
   pull_request:
     types: [opened, reopened, synchronize]
-  push:
-    branches:
-      - master
 
 permissions:
   contents: read
@@ -43,8 +45,7 @@ jobs:
     # honest; attempting and failing would look like the contributor broke something.
     if: >-
       vars.GTM_TEST_ACCOUNT_ID != '' &&
-      (github.event_name != 'pull_request' ||
-       github.event.pull_request.head.repo.full_name == github.repository)
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 

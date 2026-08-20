@@ -128,6 +128,12 @@ hard-capped: raising the per-user limit in Cloud Console does nothing. Both GTM
 workflows share a `gtm-api` concurrency group for that reason, and the script spaces
 its calls 4 seconds apart.
 
+Sharing that group is also why the compile check runs on pull requests only. When it
+also ran on `master`, the two workflows queued against each other on every merge and
+one was cancelled before starting. Nothing is lost: on `master` the e2e workflow
+publishes, and `create_version` fails loud on `compilerError` — a stronger check than
+`quick_preview`, because it actually produces a version.
+
 **Standard Tag Manager allows three workspaces per container.** The script reaps
 orphaned `ci-sync-*` workspaces before claiming one, so a killed run cannot silently
 consume a third of the budget.
