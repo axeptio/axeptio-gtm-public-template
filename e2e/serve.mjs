@@ -69,6 +69,19 @@ const server = createServer(async (req, res) => {
     if (!filePath.startsWith(ROOT)) return send(res, 403, 'forbidden');
 
     const body = await readFile(filePath);
+
+    // The live fixtures need the container and project ids, which are repository
+    // variables rather than committed values. Substituting them here keeps the
+    // URL path intact — and the path is load-bearing: the container's triggers
+    // fire on "Page Path contains live-brands" / "live-publishers", so the ids
+    // cannot be carried in the path or the tags would stop matching.
+    if (extname(filePath) === '.html') {
+      const html = body.toString('utf8')
+        .replaceAll('__GTM_PUBLIC_ID__', process.env.GTM_TEST_PUBLIC_ID || '')
+        .replaceAll('__AXEPTIO_CLIENT_ID__', process.env.AXEPTIO_TEST_CLIENT_ID || '');
+      return send(res, 200, html, CONTENT_TYPES['.html']);
+    }
+
     return send(res, 200, body, CONTENT_TYPES[extname(filePath)] || 'application/octet-stream');
   } catch (err) {
     if (err.code === 'ENOENT') return send(res, 404, `not found: ${path}`);
