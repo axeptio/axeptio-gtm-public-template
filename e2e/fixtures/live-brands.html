@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Axeptio GTM template — live Brands fixture</title>
+</head>
+<body>
+  <!--
+    Loaded by e2e/live-container.spec.mjs against the real CI container.
+
+    The FILENAME is part of the contract: the container's trigger fires on
+    "Page Path contains live-brands". Renaming this file silently stops the tag
+    firing, and the symptom is an absent banner rather than a 404.
+
+    Unlike the hermetic harness, nothing here is stubbed. GTM is fetched from
+    googletagmanager.com, it evaluates the real compiled template, and that
+    injects the genuine ~700 KB SDK from static.axept.io.
+  -->
+  <h1>Live Brands fixture</h1>
+  <p>Container <code>__GTM_PUBLIC_ID__</code>, Brands tag, real Axeptio SDK.</p>
+
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','__GTM_PUBLIC_ID__');</script>
+  <!-- End Google Tag Manager -->
+</body>
+</html>

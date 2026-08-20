@@ -64,6 +64,11 @@ If you add a permission, a parameter or an SDK URL, expect `npm run validate` to
 that is the point. Keeping the `allowedConsentTypes` list and the `access_consent` permission in
 sync used to be enforced only by a code comment.
 
+Two further layers need credentials and never gate a pull request: `npm run gtm:compile`
+asks GTM's own compiler whether the template builds, and `npm run e2e:live` loads the real
+SDK through a real container. See [docs/ci-testing.md](docs/ci-testing.md) for how to run
+them, and for the constraints — API quota, workspace limits, escaping — that shape them.
+
 ## The gallery contract
 
 This template is published through the

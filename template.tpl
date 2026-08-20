@@ -70,7 +70,7 @@ ___TEMPLATE_PARAMETERS___
     ],
     "simpleValueType": true,
     "defaultValue": "brands",
-    "help": "Which Axeptio product this Project ID belongs to. Brands loads the standard CMP, Publishers loads the TCF build — they are different SDKs, so this must match the project. A GTM variable can be selected here, which lets the product follow the visitor's country; pair it with a variable Project ID resolved from the same lookup."
+    "help": "Which Axeptio product this Project ID belongs to. Brands loads the standard CMP, Publishers loads the TCF build — they are different SDKs, so this must match the project. A GTM variable can be selected here, which lets the product follow the visitor\u0027s country; pair it with a variable Project ID resolved from the same lookup."
   },
   {
     "type": "TEXT",

@@ -1,0 +1,89 @@
+name: GTM live container e2e
+
+# Publishes template.tpl to the CI container, then loads a page carrying that
+# container's real snippet and checks the genuine Axeptio SDK boots.
+#
+# What this adds over the hermetic suite in test.yml: that one runs the real
+# sandboxed JS but injects a local stub, so it proves the template's half of the
+# contract. This proves the other half — that the real ~700 KB bundle, served from
+# static.axept.io through a real GTM container, actually reads
+# window.axeptioSettings and renders a banner. Nothing local can establish that.
+#
+# Never gates a pull request. It needs credentials, it publishes to a live
+# container, and it depends on two third-party services being up; none of those
+# belong on the merge path. Runs after master moves, on demand, and weekly so a
+# silent break in the SDK or the container surfaces within days.
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 2' # Tuesdays 06:00 UTC, a day after the SDK canary
+
+permissions:
+  contents: read
+  id-token: write
+
+# Shares the gtm-api group with the compile check: the same 0.25 QPS project quota
+# covers both, and publishing while another run is mid-flight would 403.
+concurrency:
+  group: gtm-api
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: Live container e2e
+    runs-on: ubuntu-latest
+    if: vars.GTM_TEST_ACCOUNT_ID != ''
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      # Publishes only when template.tpl differs from what the container holds,
+      # so a run that changes nothing does not burn a container version.
+      - name: Publish template to the CI container
+        env:
+          GTM_ACCOUNT_ID: ${{ vars.GTM_TEST_ACCOUNT_ID }}
+          GTM_CONTAINER_ID: ${{ vars.GTM_TEST_CONTAINER_ID }}
+        run: node scripts/push-template-to-gtm.mjs
+
+      - name: Resolve Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Run the live suite
+        env:
+          GTM_TEST_PUBLIC_ID: ${{ vars.GTM_TEST_PUBLIC_ID }}
+          AXEPTIO_TEST_CLIENT_ID: ${{ vars.AXEPTIO_TEST_CLIENT_ID }}
+        run: npm run e2e:live
+
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-live-report
+          path: playwright-report/
+          retention-days: 7

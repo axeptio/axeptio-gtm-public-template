@@ -1,0 +1,70 @@
+name: GTM compile check
+
+# Asks Google to compile template.tpl and fails if it would not build.
+#
+# This is the only check in the repository that reaches GTM's real compiler, and
+# it covers the class the local suite structurally cannot. `npm test` runs the
+# sandboxed source in a Node vm — full ECMAScript — so anything GTM's restricted
+# Sandboxed JS subset rejects passes locally and fails on import. Likewise a
+# malformed ___TEMPLATE_PARAMETERS___ or ___WEB_PERMISSIONS___ block parses as JSON
+# happily while being invalid as a template.
+#
+# Non-destructive: it writes into an ephemeral workspace, calls quick_preview, and
+# deletes the workspace. No container version is created and nothing is published,
+# so it is safe on every pull request.
+#
+# Does not gate merges. It needs credentials, so it cannot run on pull requests
+# from forks, and a required check that is structurally unavailable to some
+# contributors would block them permanently.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  id-token: write # required to mint the Workload Identity token
+
+# GTM's quota is 0.25 QPS per project over a 100-second window, and it is hard
+# capped — raising the per-user limit in Cloud Console does not lift it. Two
+# concurrent runs would 403 each other, so serialise rather than cancel: a queued
+# run still has useful work to do.
+concurrency:
+  group: gtm-api
+  cancel-in-progress: false
+
+jobs:
+  compile:
+    name: Compile template in GTM
+    runs-on: ubuntu-latest
+    # Fork pull requests receive neither secrets nor an OIDC token. Skipping is
+    # honest; attempting and failing would look like the contributor broke something.
+    if: >-
+      vars.GTM_TEST_ACCOUNT_ID != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Keyless: the token is minted from the repository's OIDC identity and the
+      # provider is bound to this repository by an attribute condition. There is
+      # no service-account key to store, which is the point on a public repo.
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: quick_preview
+        env:
+          GTM_ACCOUNT_ID: ${{ vars.GTM_TEST_ACCOUNT_ID }}
+          GTM_CONTAINER_ID: ${{ vars.GTM_TEST_CONTAINER_ID }}
+        run: node scripts/push-template-to-gtm.mjs --compile-only

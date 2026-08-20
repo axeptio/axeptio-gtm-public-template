@@ -6,11 +6,16 @@
   "scripts": {
     "test": "node --test",
     "validate": "node scripts/validate-template.mjs",
-    "e2e": "playwright test",
-    "serve:e2e": "node e2e/serve.mjs"
+    "e2e": "playwright test --project=hermetic",
+    "e2e:live": "playwright test --project=live",
+    "serve:e2e": "node e2e/serve.mjs",
+    "gtm:compile": "node scripts/push-template-to-gtm.mjs --compile-only",
+    "gtm:dry-run": "node scripts/push-template-to-gtm.mjs --dry-run",
+    "gtm:publish": "node scripts/push-template-to-gtm.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "google-auth-library": "^11.0.2",
     "js-yaml": "^4.1.0"
   },
   "license": "Apache-2.0"
