@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.4](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.3...v2.1.4) (2026-08-20)
+
+
+### Bug Fixes
+
+* **template:** load the SDK when Consent Mode has no default rows ([54021f1](https://github.com/axeptio/axeptio-gtm-public-template/commit/54021f12d91c8085c526f9eb25ce40f8f614fd7b))
+* **template:** load the SDK when Consent Mode has no default rows ([2d604b9](https://github.com/axeptio/axeptio-gtm-public-template/commit/2d604b93978e108ed2350572c19a3278d4486cdc))
+
 ## [2.1.3](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.2...v2.1.3) (2026-08-06)
 
 
