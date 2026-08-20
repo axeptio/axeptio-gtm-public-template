@@ -93,6 +93,20 @@ test('catches an API whose permission is not declared, and an unused permission'
   );
 });
 
+test('catches a literal character that GTM would escape', () => {
+  // Regression guard for the always-republish failure. GTM re-serialises the JSON
+  // blocks and escapes ' = & < >, so a hand-typed apostrophe makes the stored
+  // template permanently unequal to this file. Verified against the live API:
+  // canonical file round-trips byte-for-byte, one literal apostrophe comes back
+  // five bytes longer — which would make the CI sync publish on every single run.
+  const violations = violationsAfter(replaceOnce('visitor\\u0027s country', "visitor's country"));
+  assert.equal(
+    matching(violations, /___TEMPLATE_PARAMETERS___ contains 1 literal .* GTM stores it as/).length,
+    1,
+    violations.join('\n'),
+  );
+});
+
 test('catches malformed JSON in a structured block', () => {
   const violations = violationsAfter(replaceOnce('"publicId": "logging"', '"publicId" "logging"'));
   assert.equal(matching(violations, /___WEB_PERMISSIONS___ is not valid JSON/).length, 1, violations.join('\n'));

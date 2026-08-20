@@ -137,6 +137,30 @@ export function validateTemplate(tplPath = TPL_PATH) {
   // Nothing below can run without the parameters and permissions blocks.
   if (!parsed.___TEMPLATE_PARAMETERS___ || !parsed.___WEB_PERMISSIONS___) return violations;
 
+  // --- 2. JSON blocks must use GTM's escaping. --------------------------------
+  // GTM re-serialises these three blocks when it stores a template, turning
+  // ' = & < > into \uXXXX escapes. template.tpl was originally exported from GTM
+  // and is already in that form, so this normally holds for free — but a hand-edit
+  // that types a literal apostrophe silently breaks it, and the damage is remote:
+  // the copy GTM stores can then never equal this file. The CI sync compares the
+  // two to decide whether to publish, so one literal character makes every run
+  // cut and publish a new container version, against a quota of 0.25 req/s.
+  // Verified against the live API: with the file canonical, a PUT round-trips
+  // byte-for-byte; with one literal apostrophe, it comes back five bytes longer.
+  const GTM_ESCAPES = { "'": '\\u0027', '=': '\\u003d', '&': '\\u0026', '<': '\\u003c', '>': '\\u003e' };
+  for (const name of ['___INFO___', '___TEMPLATE_PARAMETERS___', '___WEB_PERMISSIONS___']) {
+    const body = sections[name] || '';
+    for (const [ch, escaped] of Object.entries(GTM_ESCAPES)) {
+      const count = body.split(ch).length - 1;
+      if (count > 0) {
+        fail(
+          `${name} contains ${count} literal ${JSON.stringify(ch)}; GTM stores it as ` +
+          `${escaped}, so this file could never match the container. Write ${escaped} instead.`,
+        );
+      }
+    }
+  }
+
   let checker;
   try {
     checker = createPermissionChecker(parsed.___WEB_PERMISSIONS___);
@@ -146,7 +170,7 @@ export function validateTemplate(tplPath = TPL_PATH) {
   }
   const declaredPermissions = new Set(Object.keys(checker.permissions));
 
-  // --- 2. data.<name> reads must match declared parameters, both ways. --------
+  // --- 3. data.<name> reads must match declared parameters, both ways. --------
   const { names: paramNames, containers } = collectParamNames(parsed.___TEMPLATE_PARAMETERS___);
   const dataKeys = uniqueMatches(sandboxSource, /\bdata\.([A-Za-z_][A-Za-z0-9_]*)/g);
 
@@ -167,7 +191,7 @@ export function validateTemplate(tplPath = TPL_PATH) {
     }
   }
 
-  // --- 3. allowedConsentTypes must be writable via access_consent. ------------
+  // --- 4. allowedConsentTypes must be writable via access_consent. ------------
   // The one coupling that currently has no enforcement beyond a code comment.
   const consentListMatch = sandboxSource.match(/allowedConsentTypes\s*=\s*\[([^\]]*)\]/);
   if (!consentListMatch) {
@@ -184,7 +208,7 @@ export function validateTemplate(tplPath = TPL_PATH) {
     }
   }
 
-  // --- 4. Injected URLs must be covered by inject_script. ---------------------
+  // --- 5. Injected URLs must be covered by inject_script. ---------------------
   // Every absolute URL literal in the sandboxed JS is checked, because the only
   // ones this template contains are the SDK bundles it injects. A future literal
   // used for something else (sendPixel, say) should extend this check rather than
@@ -195,7 +219,7 @@ export function validateTemplate(tplPath = TPL_PATH) {
     }
   }
 
-  // --- 5. require()d APIs: documented, and permitted. -------------------------
+  // --- 6. require()d APIs: documented, and permitted. -------------------------
   const required = uniqueMatches(sandboxSource, /require\((['"])([^'"]+)\1\)/g, 2);
   const neededPermissions = new Set();
   for (const api of required) {
@@ -219,7 +243,7 @@ export function validateTemplate(tplPath = TPL_PATH) {
     }
   }
 
-  // --- 6. Literal keys passed to permission-scoped APIs. ----------------------
+  // --- 7. Literal keys passed to permission-scoped APIs. ----------------------
   // Only literal arguments are checked; a computed key is skipped rather than
   // guessed at.
   for (const key of uniqueMatches(sandboxSource, /gtagSet\((['"])([^'"]+)\1/g, 2)) {
@@ -238,7 +262,7 @@ export function validateTemplate(tplPath = TPL_PATH) {
     }
   }
 
-  // --- 7. Gallery icon constraints. -------------------------------------------
+  // --- 8. Gallery icon constraints. -------------------------------------------
   // The gallery requires a square icon under 50 KB; an oversized one is the kind
   // of thing a human reviewer files an Issue about days after submission.
   const info = parsed.___INFO___;
