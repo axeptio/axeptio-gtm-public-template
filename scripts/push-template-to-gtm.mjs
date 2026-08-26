@@ -66,6 +66,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GoogleAuth } from 'google-auth-library';
+import { compareTemplates, stripBom } from '../lib/template.mjs';
 
 const TPL_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'template.tpl');
 const API_BASE = 'https://tagmanager.googleapis.com/tagmanager/v2';
@@ -263,12 +264,9 @@ async function api(method, path, { query, body } = {}) {
 
 // --- Flow ---------------------------------------------------------------------
 
-// Compared loosely on trailing whitespace only. The bodies must otherwise match
-// byte-for-byte, and they do: GTM re-serialises the JSON blocks with ' = & < >
-// escaped as \uXXXX, and template.tpl is kept in exactly that form — enforced by
-// check 2 in scripts/validate-template.mjs. Without that invariant this comparison
-// would never match and every run would publish a new container version.
-const norm = (s) => (s || '').replace(/\s+$/, '');
+// The comparison lives in lib/template.mjs so it can be unit-tested without the
+// API. It compares meaning rather than bytes — see the note there for why a byte
+// comparison could not work, and cost two production bugs before this.
 
 async function findTemplate(workspacePath) {
   const res = await api('GET', `${workspacePath}/templates`);
@@ -299,7 +297,10 @@ async function reapOrphanedWorkspaces() {
 }
 
 async function main() {
-  const localData = readFileSync(TPL_PATH, 'utf8');
+  // stripBom because template.tpl is UTF-8 WITH BOM, and this script was the one
+  // reader that did not strip it — see lib/template.mjs. A leading U+FEFF that GTM
+  // drops on storage makes the comparison unequal by one character, forever.
+  const localData = stripBom(readFileSync(TPL_PATH, 'utf8'));
 
   await reapOrphanedWorkspaces();
 
@@ -327,7 +328,18 @@ async function main() {
 
   try {
     const template = await findTemplate(workspacePath);
-    const unchanged = norm(template.templateData) === norm(localData);
+
+    // A missing templateData would silently compare unequal forever, and the PUT
+    // would still succeed because the explicit key follows the spread. Say so.
+    if (typeof template.templateData !== 'string') {
+      console.warn('  the container returned no templateData; treating as changed');
+    }
+    const comparison = compareTemplates(localData, template.templateData);
+    const unchanged = comparison.equal;
+    if (!unchanged) {
+      console.log('template.tpl differs from the container:');
+      for (const difference of comparison.differences) console.log(`  - ${difference}`);
+    }
 
     if (compileOnly) {
       // Always write and compile, even when the container already matches: the
@@ -393,6 +405,13 @@ async function main() {
       throw new Error('create_version returned no container version; nothing to publish.');
     }
     console.log(`Created container version ${version.containerVersionId}`);
+
+    // create_version consumes the workspace. Deleting it afterwards does not 404 as
+    // the sGTM original assumed — GTM answers 500 "Experienced an internal error",
+    // which the retry logic treats as transient and burns six calls and ~31s of
+    // backoff on. Mark it gone instead. Every path that does NOT reach here still
+    // deletes: compile-only, dry-run, the no-op branch, and the error path.
+    workspaceLives = false;
 
     await api('POST', `${containerPath}/versions/${version.containerVersionId}:publish`, {
       query: { fingerprint: version.fingerprint },
