@@ -22,10 +22,13 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: 55809818376265b3ba81e7bad7497f5a6d6da555
+    changeNotes: |-
+      - **template:** keep the JSON blocks in GTM's canonical escaping
+  # Older versions
   - sha: 5d6382f64703e701495c7f00dbe162abedf735e4
     changeNotes: |-
       - **template:** load the SDK when Consent Mode has no default rows
-  # Older versions
   - sha: 2ae4a40fb44f5176ab75b101925b0f5e82b3f82d
     changeNotes: |-
       - **template:** only replay early consent from this project's cookie
