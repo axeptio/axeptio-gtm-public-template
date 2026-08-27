@@ -28,7 +28,8 @@ In your GTM **web** container: **Templates → Tag Templates → Search Gallery*
 **Axeptio CMP**, and add it to your workspace. Then create a tag from the template and set at
 least the **Project ID**.
 
-Trigger it on **Initialization — All Pages** so the CMP loads before your other tags.
+Trigger it on **Consent Initialization — All Pages** so Consent Mode defaults are set before
+every other tag fires, not just before the CMP loads.
 
 Step-by-step setup, screenshots and Consent Mode guidance live in the Help Center:
 
@@ -69,8 +70,8 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 
 | Field | What it does |
 | --- | --- |
-| Activate Google Consent Mode v2 | Master switch. When on, at least one default-settings row is required. |
-| Default Settings | Per-region defaults for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`. |
+| Activate Google Consent Mode v2 | Master switch, **on by default**. |
+| Default Settings | Per-region defaults for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`. Leaving the table empty denies all four types in every region — it does not mean "no default". |
 | Redact Ads Data | Stops advertising cookies being set while `ad_storage` is denied. |
 | Pass through URL parameters | Preserves ad click information across pages when cookies are denied. |
 

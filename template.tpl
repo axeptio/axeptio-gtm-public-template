@@ -180,7 +180,9 @@ ___TEMPLATE_PARAMETERS___
         "type": "CHECKBOX",
         "name": "isComoEnabled",
         "checkboxText": "Activate Google Consent Mode v2",
-        "simpleValueType": true
+        "simpleValueType": true,
+        "defaultValue": true,
+        "help": "Sets Google Consent Mode defaults before your other tags and replays a returning visitor\u0027s stored choice. Trigger this tag on Consent Initialization - All Pages."
       },
       {
         "type": "PARAM_TABLE",
@@ -278,17 +280,12 @@ ___TEMPLATE_PARAMETERS___
             "isUnique": false
           }
         ],
+        "help": "Leave this table empty to deny all four types in every region. Add rows for per-region defaults; Region accepts comma-separated ISO 3166-2 codes, or leave it blank to apply to every region.",
         "enablingConditions": [
           {
             "paramName": "isComoEnabled",
             "paramValue": true,
             "type": "EQUALS"
-          }
-        ],
-        "valueValidators": [
-          {
-            "type": "NON_EMPTY",
-            "errorMessage": "Add at least one row. You can leave the region field empty"
           }
         ]
       },
@@ -414,6 +411,22 @@ const main = (data) => {
   // arrives here with data.defaultSettings undefined. Iterating that threw a
   // TypeError before injectScript ran, so the failure was not a missing consent
   // default: the SDK never loaded and the visitor got no CMP at all.
+  //
+  // An empty table used to mean no default was ever sent to Google at all, and
+  // Google treats the absence of a setDefaultConsentState call as consent
+  // granted - the opposite of what enabling Consent Mode is meant to do. Every
+  // competitor template falls back to denied in this case, so when there are no
+  // rows we send one explicit denied default for all four types, globally,
+  // before the (now empty) per-row loop below runs.
+  if ((data.defaultSettings || []).length === 0) {
+    setDefaultConsentState({
+      ad_storage: 'denied',
+      analytics_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      wait_for_update: 500
+    });
+  }
   (data.defaultSettings || []).forEach(settings => {
     const defaultData = parseCommandData(settings);
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
@@ -1479,12 +1492,36 @@ scenarios:
   code: |-
     // GTM sends nothing for an empty PARAM_TABLE, so defaultSettings is absent
     // rather than an empty array. This used to throw before injectScript, so the
-    // tag shipped no CMP at all rather than merely no consent default.
+    // tag shipped no CMP at all rather than merely no consent default. It now
+    // also falls back to an explicit denied default instead of sending none.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
     runCode({id: '6a22da4da7d365c1e246783d', isComoEnabled: true});
 
-    assertApi('setDefaultConsentState').wasNotCalled();
+    assertThat(applied).isEqualTo({
+      ad_storage: 'denied',
+      analytics_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      wait_for_update: 500
+    });
     assertApi('injectScript').wasCalled();
     assertApi('gtmOnFailure').wasNotCalled();
+- name: An empty default table also falls back to denied
+  code: |-
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertThat(applied).isEqualTo({
+      ad_storage: 'denied',
+      analytics_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      wait_for_update: 500
+    });
 - name: gtmOnSuccess fires when the SDK script loads
   code: |-
     mock('injectScript', (url, onSuccess) => { onSuccess(); });
