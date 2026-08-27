@@ -80,6 +80,32 @@ test('Consent Mode defaults reach the data layer before the SDK loads', async ({
   expect(result.calls.indexOf('setDefaultConsentState')).toBeLessThan(result.calls.indexOf('injectScript'));
 });
 
+test('the extra storage types are writable and the wait is configurable', async ({ page }) => {
+  // Permissions are enforced here, so this run aborts before the SDK if any of the
+  // three new access_consent rows is missing — the production symptom the
+  // ___TESTS___ scenarios, which do not enforce permissions, cannot see.
+  const result = await run(page, {
+    id: PROJECT_ID,
+    isComoEnabled: true,
+    waitForUpdate: '2000',
+    defaultSettings: [{
+      region: '',
+      ad_storage: 'denied',
+      functionality_storage: 'denied',
+      personalization_storage: 'denied',
+      security_storage: 'granted',
+    }],
+  });
+  expect(result.error).toBeNull();
+
+  const consent = result.dataLayer.find((entry) => entry.event === 'consent.default');
+  expect(consent).toBeTruthy();
+  expect(consent.state.functionality_storage).toBe('denied');
+  expect(consent.state.personalization_storage).toBe('denied');
+  expect(consent.state.security_storage).toBe('granted');
+  expect(consent.state.wait_for_update).toBe(2000);
+});
+
 test('an existing consent cookie is replayed as a consent update', async ({ page, context }) => {
   await context.addCookies([{
     name: 'axeptio_cookies',
@@ -111,12 +137,16 @@ test('a consent type outside access_consent aborts the tag before the SDK loads'
   // handed one it cannot write. This proves the guard is load-bearing — the runtime
   // here enforces permissions exactly as GTM does, so removing that filter would
   // surface as an aborted tag rather than a green test.
+  //
+  // All seven Google types are granted now, so the key that must be rejected is a
+  // container-defined custom consent type — the shape of anything else the SDK
+  // might one day write into the cookie's Consent Mode block.
   const denied = await page.evaluate(async () => {
     const { createRuntime } = await import('./gtm-runtime.js');
     const permissions = await fetch('/template/permissions.json').then((r) => r.json());
     const runtime = createRuntime(permissions);
     try {
-      runtime.require('updateConsentState')({ ad_storage: 'granted', functionality_storage: 'granted' });
+      runtime.require('updateConsentState')({ ad_storage: 'granted', my_custom_consent: 'granted' });
       return null;
     } catch (err) {
       return { message: err.message, permission: err.permission };
@@ -125,7 +155,7 @@ test('a consent type outside access_consent aborts the tag before the SDK loads'
 
   expect(denied).not.toBeNull();
   expect(denied.permission).toBe('access_consent');
-  expect(denied.message).toContain('functionality_storage');
+  expect(denied.message).toContain('my_custom_consent');
 });
 
 test('a denied inject_script permission takes the failure path', async ({ page }) => {

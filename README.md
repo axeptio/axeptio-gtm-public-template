@@ -28,7 +28,8 @@ In your GTM **web** container: **Templates → Tag Templates → Search Gallery*
 **Axeptio CMP**, and add it to your workspace. Then create a tag from the template and set at
 least the **Project ID**.
 
-Trigger it on **Initialization — All Pages** so the CMP loads before your other tags.
+Trigger it on **Consent Initialization — All Pages** so Consent Mode defaults are set before
+every other tag fires, not just before the CMP loads.
 
 Step-by-step setup, screenshots and Consent Mode guidance live in the Help Center:
 
@@ -50,6 +51,7 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | User cookies duration (in days) | `180` | How long the visitor's choices are remembered. |
 | User cookies domain | — | Set to a parent domain to share one consent across subdomains. |
 | User cookies secure | on | Restricts the consent cookie to HTTPS. |
+| Consent cookie metadata prefix | `$$` | The prefix the SDK stores its bookkeeping keys under. Change it only if your project sets `metadataPrefix` — otherwise the tag reads the visitor's stored choices under the wrong keys. This field is passed to the SDK and wins over a `metadataPrefix` row in Additional Settings; a row on its own is honoured for both. |
 | dataLayer Name | — | Set only if your container uses a non-default dataLayer name. |
 | Trigger GTM Events | on | Whether Axeptio pushes its events to the dataLayer. *Update Only* fires just `axeptio_update`. |
 
@@ -60,7 +62,7 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 
 | Field | What it does |
 | --- | --- |
-| Server-side URL | Your server-side container URL, for forwarding consent. Pair with the [sGTM template](#related-templates). |
+| Server-side URL | Your server-side container URL, for forwarding consent. Pair with the [sGTM template](#related-templates). Accepts a GTM variable. |
 
 </details>
 
@@ -69,10 +71,14 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 
 | Field | What it does |
 | --- | --- |
-| Activate Google Consent Mode v2 | Master switch. When on, at least one default-settings row is required. |
-| Default Settings | Per-region defaults for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`. |
+| Activate Google Consent Mode v2 | Master switch. Consent Mode is **off until you tick the box** — nothing below applies while it is unchecked. |
+| Default Settings | Per-region defaults for all seven consent types: `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`, `functionality_storage`, `personalization_storage`, `security_storage`. `security_storage` defaults to **Granted** (denying it breaks sign-in and fraud prevention); `functionality_storage` and `personalization_storage` default to **Not set**, which sends no default for them and so leaves Google's own default of granted — a Brands site only ever updates the four advertising and analytics types, so a denied default there would never be lifted. Leaving the table empty denies those four in every region and grants `security_storage` — it does not mean "no default". |
+| Wait for update (ms) | How long Google tags wait for the visitor's stored choice before using the defaults above. Defaults to `500`, which covers the replay from the consent cookie; raise it (2000 is common) if tags fire before the banner on a first visit. |
 | Redact Ads Data | Stops advertising cookies being set while `ad_storage` is denied. |
 | Pass through URL parameters | Preserves ad click information across pages when cookies are denied. |
+
+Whenever the tag skips the replay of a returning visitor's stored consent, or falls back on a
+setting it cannot use, it names the reason in GTM Preview — and only there, never in production.
 
 </details>
 
