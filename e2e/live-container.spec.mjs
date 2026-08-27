@@ -112,3 +112,88 @@ test('the two fixtures load different bundles', async ({ page }) => {
   expect(onBrands).not.toContain('/tcf/sdk.js');
   expect(onPublishers).not.toContain('/sdk.js');
 });
+
+// The cookie the SDK writes and the template reads back. Parsed rather than
+// substring-matched so the assertions can name the field they care about.
+//
+// Raw first, decoded second — the same order of preference template.tpl uses. The
+// SDK writes it URL-encoded today, but decoding first is not free: a raw value
+// containing a stray `%` makes decodeURIComponent throw, and one containing a
+// literal `%xx` would be silently rewritten. Either way the helper would return
+// null and the failure would read as "no cookie" rather than "unparseable".
+async function readAxeptioCookie(page) {
+  return page.evaluate(() => {
+    // Split on ';' and trim rather than on '; ': the separator is conventional,
+    // not guaranteed, and trimming costs nothing.
+    const hit = document.cookie
+      .split(';')
+      .map((c) => c.trim())
+      .find((c) => c.startsWith('axeptio_cookies='));
+    if (!hit) return null;
+
+    const raw = hit.slice('axeptio_cookies='.length);
+    const candidates = [raw];
+    try {
+      candidates.push(decodeURIComponent(raw));
+    } catch {
+      // Not percent-encoded; the raw candidate still stands.
+    }
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // Try the next form.
+      }
+    }
+    return null;
+  });
+}
+
+test('Brands: accepting writes a cookie the template replays as an early consent update', async ({ page }) => {
+  // The round trip no cheaper layer can prove. The unit scenarios feed the parser a
+  // hand-written cookie and the hermetic suite stubs the bundle, so both assert that
+  // the template handles a cookie *we* wrote. Only here does the real SDK write it.
+  await page.goto(BRANDS);
+
+  // Nothing to replay on a first visit, so the flag must be absent. Asserting this
+  // before accepting is what stops the final assertion passing on a warm cookie.
+  const first = await waitForSettings(page);
+  expect(first.consentUpdateAlreadySent).toBeUndefined();
+  await expect(page.locator('#axeptio_overlay')).toBeAttached({ timeout: BOOT_TIMEOUT });
+
+  await page.locator('#axeptio_btn_acceptAll').click();
+
+  // The SDK persists the choice asynchronously, hence the poll rather than a wait.
+  //
+  // Polled on the consent block itself rather than on $$completed. A cookie write
+  // replaces the whole value, so in principle $$completed cannot arrive without the
+  // rest of that same write — but that reasoning assumes the SDK writes once, which
+  // is its business to change, and waiting on the field this test actually depends
+  // on costs nothing and cannot race.
+  //
+  // $$googleConsentMode is the block template.tpl reads. It is written only when the
+  // Axeptio project has Google Consent Mode enabled, so this doubles as a check on
+  // the CI project's configuration — if it silently loses that setting, the early
+  // update stops happening in production too and this is where it surfaces.
+  await expect
+    .poll(async () => (await readAxeptioCookie(page))?.$$googleConsentMode?.ad_storage,
+      { timeout: BOOT_TIMEOUT })
+    .toBe('granted');
+
+  const cookie = await readAxeptioCookie(page);
+  expect(cookie.$$completed).toBe(true);
+
+  // The cookie also carries `version: 2`, which is NOT a consent type. The template
+  // filters to the four types granted in access_consent; passing the extra key would
+  // fail updateConsentState's permission check and abort the tag before injectScript.
+  // So the flag below being true is also proof that filtering works against the real
+  // permissions — the coupling validate-template.mjs check 5 only enforces statically.
+  expect(cookie.$$googleConsentMode.version).toBeDefined();
+
+  // The payoff: the real template parsed the real SDK's cookie and the real
+  // updateConsentState call succeeded. Had the permission check failed, the tag would
+  // have aborted and axeptioSettings would never appear — a timeout, not a false pass.
+  await page.reload();
+  const second = await waitForSettings(page);
+  expect(second.consentUpdateAlreadySent).toBe(true);
+});
