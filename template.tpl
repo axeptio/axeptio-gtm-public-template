@@ -1088,6 +1088,10 @@ ___WEB_PERMISSIONS___
               {
                 "type": 1,
                 "string": "https://static.axept.io/tcf/sdk.js"
+              },
+              {
+                "type": 1,
+                "string": "https://*/"
               }
             ]
           }
