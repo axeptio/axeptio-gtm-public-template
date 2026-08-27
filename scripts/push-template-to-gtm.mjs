@@ -327,12 +327,18 @@ async function main() {
   };
 
   try {
-    const template = await findTemplate(workspacePath);
+    let template = await findTemplate(workspacePath);
 
-    // A missing templateData would silently compare unequal forever, and the PUT
-    // would still succeed because the explicit key follows the spread. Say so.
+    // templates.list returns templateData today, but is not contractually obliged
+    // to. Absent it the comparison is unequal forever and every run republishes —
+    // this bug again, on a path where a warning alone would not stop it. So pay one
+    // extra call to read the template directly, and only then give up.
     if (typeof template.templateData !== 'string') {
-      console.warn('  the container returned no templateData; treating as changed');
+      console.warn('  templates.list returned no templateData; reading the template directly');
+      template = await api('GET', template.path);
+    }
+    if (typeof template.templateData !== 'string') {
+      console.warn('  still no templateData; treating as changed');
     }
     const comparison = compareTemplates(localData, template.templateData);
     const unchanged = comparison.equal;
@@ -396,6 +402,15 @@ async function main() {
     const created = await api('POST', `${workspacePath}:create_version`, {
       body: { name: versionName, notes: `Automated sync of template.tpl at ${sha}` },
     });
+    // create_version consumes the workspace only when it actually produces a
+    // version. Record that BEFORE the checks below throw: a compilerError reported
+    // alongside a version still leaves the workspace consumed, and deleting it then
+    // costs six calls and ~31s of backoff (see the note below). A create_version
+    // that yields no version leaves the workspace intact, so the catch must still
+    // delete it — marking it gone unconditionally would leak it against a limit of
+    // three per container.
+    if (created.containerVersion?.containerVersionId) workspaceLives = false;
+
     if (created.compilerError) throw new Error('create_version reported a compilerError; not publishing.');
     if (created.syncStatus?.mergeConflict || created.syncStatus?.syncError) {
       throw new Error(`create_version reported a dirty syncStatus: ${JSON.stringify(created.syncStatus)}`);
@@ -404,14 +419,12 @@ async function main() {
     if (!version?.containerVersionId) {
       throw new Error('create_version returned no container version; nothing to publish.');
     }
+    // Deleting a consumed workspace does not 404 as the sGTM original assumed —
+    // GTM answers 500 "Experienced an internal error", which the retry logic treats
+    // as transient and burns six calls and ~31s of backoff on. Hence the flag above.
+    // Every path that creates no version still deletes: compile-only, dry-run, the
+    // no-op branch, and a create_version that failed to produce one.
     console.log(`Created container version ${version.containerVersionId}`);
-
-    // create_version consumes the workspace. Deleting it afterwards does not 404 as
-    // the sGTM original assumed — GTM answers 500 "Experienced an internal error",
-    // which the retry logic treats as transient and burns six calls and ~31s of
-    // backoff on. Mark it gone instead. Every path that does NOT reach here still
-    // deletes: compile-only, dry-run, the no-op branch, and the error path.
-    workspaceLives = false;
 
     await api('POST', `${containerPath}/versions/${version.containerVersionId}:publish`, {
       query: { fingerprint: version.fingerprint },
