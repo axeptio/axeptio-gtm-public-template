@@ -9,7 +9,7 @@ pull request; the last two need credentials and never block a merge.
 | Template contract | `npm run validate` | yes | drift *between* the template's sections |
 | Hermetic browser | `npm run e2e` | yes | the settings-then-inject ordering, permission failures |
 | GTM compile | `npm run gtm:compile` | no | anything GTM's own compiler rejects |
-| Live container | `npm run e2e:live` | no | the real SDK failing to boot, the consent round trip |
+| Live container | `npm run e2e:live` | no | the real SDK failing to boot, the consent round trip, the double consent default |
 
 `npm test` runs the first two together — the contract validator is wired in through
 `test/template-contract.test.mjs` so it cannot be forgotten.
@@ -43,7 +43,13 @@ an ephemeral workspace, a `quick_preview`, then the workspace is deleted.
 only layer that can tell you the SDK itself broke. It also drives the one round trip
 that has no cheaper equivalent: accept the real banner, let the real SDK write
 `axeptio_cookies`, reload, and confirm the template replayed it as an early consent
-update. Everywhere else the template is fed a cookie this repository wrote.
+update. Everywhere else the template is fed a cookie this repository wrote. It is
+also the only place the two halves can be counted against each other, which is how
+the **double consent default** stopped being a suspicion: it counts the
+`gtag('consent', …)` calls the SDK pushes into the dataLayer on top of the ones the
+template already made through GTM's API, and the TCF build sends a second, global
+all-denied default over the template's. That check is marked `test.fail`, so it stays
+green today and turns red the day the SDK stops doing it.
 
 A defect that reaches production has, by definition, escaped all five. When that
 happens, add the check to the cheapest layer that could have caught it.
