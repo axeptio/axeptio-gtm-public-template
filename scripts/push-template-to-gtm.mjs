@@ -66,6 +66,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GoogleAuth } from 'google-auth-library';
+import { compareTemplates, stripBom } from '../lib/template.mjs';
 
 const TPL_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'template.tpl');
 const API_BASE = 'https://tagmanager.googleapis.com/tagmanager/v2';
@@ -263,12 +264,9 @@ async function api(method, path, { query, body } = {}) {
 
 // --- Flow ---------------------------------------------------------------------
 
-// Compared loosely on trailing whitespace only. The bodies must otherwise match
-// byte-for-byte, and they do: GTM re-serialises the JSON blocks with ' = & < >
-// escaped as \uXXXX, and template.tpl is kept in exactly that form — enforced by
-// check 2 in scripts/validate-template.mjs. Without that invariant this comparison
-// would never match and every run would publish a new container version.
-const norm = (s) => (s || '').replace(/\s+$/, '');
+// The comparison lives in lib/template.mjs so it can be unit-tested without the
+// API. It compares meaning rather than bytes — see the note there for why a byte
+// comparison could not work, and cost two production bugs before this.
 
 async function findTemplate(workspacePath) {
   const res = await api('GET', `${workspacePath}/templates`);
@@ -299,7 +297,10 @@ async function reapOrphanedWorkspaces() {
 }
 
 async function main() {
-  const localData = readFileSync(TPL_PATH, 'utf8');
+  // stripBom because template.tpl is UTF-8 WITH BOM, and this script was the one
+  // reader that did not strip it — see lib/template.mjs. A leading U+FEFF that GTM
+  // drops on storage makes the comparison unequal by one character, forever.
+  const localData = stripBom(readFileSync(TPL_PATH, 'utf8'));
 
   await reapOrphanedWorkspaces();
 
@@ -326,8 +327,25 @@ async function main() {
   };
 
   try {
-    const template = await findTemplate(workspacePath);
-    const unchanged = norm(template.templateData) === norm(localData);
+    let template = await findTemplate(workspacePath);
+
+    // templates.list returns templateData today, but is not contractually obliged
+    // to. Absent it the comparison is unequal forever and every run republishes —
+    // this bug again, on a path where a warning alone would not stop it. So pay one
+    // extra call to read the template directly, and only then give up.
+    if (typeof template.templateData !== 'string') {
+      console.warn('  templates.list returned no templateData; reading the template directly');
+      template = await api('GET', template.path);
+    }
+    if (typeof template.templateData !== 'string') {
+      console.warn('  still no templateData; treating as changed');
+    }
+    const comparison = compareTemplates(localData, template.templateData);
+    const unchanged = comparison.equal;
+    if (!unchanged) {
+      console.log('template.tpl differs from the container:');
+      for (const difference of comparison.differences) console.log(`  - ${difference}`);
+    }
 
     if (compileOnly) {
       // Always write and compile, even when the container already matches: the
@@ -384,6 +402,15 @@ async function main() {
     const created = await api('POST', `${workspacePath}:create_version`, {
       body: { name: versionName, notes: `Automated sync of template.tpl at ${sha}` },
     });
+    // create_version consumes the workspace only when it actually produces a
+    // version. Record that BEFORE the checks below throw: a compilerError reported
+    // alongside a version still leaves the workspace consumed, and deleting it then
+    // costs six calls and ~31s of backoff (see the note below). A create_version
+    // that yields no version leaves the workspace intact, so the catch must still
+    // delete it — marking it gone unconditionally would leak it against a limit of
+    // three per container.
+    if (created.containerVersion?.containerVersionId) workspaceLives = false;
+
     if (created.compilerError) throw new Error('create_version reported a compilerError; not publishing.');
     if (created.syncStatus?.mergeConflict || created.syncStatus?.syncError) {
       throw new Error(`create_version reported a dirty syncStatus: ${JSON.stringify(created.syncStatus)}`);
@@ -392,6 +419,11 @@ async function main() {
     if (!version?.containerVersionId) {
       throw new Error('create_version returned no container version; nothing to publish.');
     }
+    // Deleting a consumed workspace does not 404 as the sGTM original assumed —
+    // GTM answers 500 "Experienced an internal error", which the retry logic treats
+    // as transient and burns six calls and ~31s of backoff on. Hence the flag above.
+    // Every path that creates no version still deletes: compile-only, dry-run, the
+    // no-op branch, and a create_version that failed to produce one.
     console.log(`Created container version ${version.containerVersionId}`);
 
     await api('POST', `${containerPath}/versions/${version.containerVersionId}:publish`, {
