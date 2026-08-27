@@ -113,6 +113,71 @@ test('the two fixtures load different bundles', async ({ page }) => {
   expect(onPublishers).not.toContain('/sdk.js');
 });
 
+// The `gtag('consent', …)` calls the page made, as plain arrays. The SDK defines
+// gtag the standard way — `function gtag(){ dataLayer.push(arguments) }` — so its
+// calls land in the dataLayer as Arguments objects rather than events or arrays.
+// Array.from before the value crosses the page boundary: Playwright serialises a
+// bare Arguments object as `{}`.
+//
+// What is NOT counted here is the point. setDefaultConsentState, updateConsentState
+// and gtagSet all write to GTM's internal consent model, never to the dataLayer, so
+// nothing the template does appears below — checked by loading both fixtures with
+// static.axept.io blocked, where the template still ran (Brands still reported
+// consentUpdateAlreadySent) and the dataLayer held no Arguments entry at all. Every
+// entry counted is therefore the SDK's, on top of whatever the template already set.
+async function gtagConsentCalls(page, command) {
+  return page.evaluate((wanted) => Array.from(window.dataLayer || [])
+    .filter((entry) => Object.prototype.toString.call(entry) === '[object Arguments]')
+    .map((entry) => Array.from(entry))
+    .filter((args) => args[0] === 'consent' && args[1] === wanted), command);
+}
+
+// Counting calls means counting a number that only ever goes up, so there is no
+// event to wait for — and waiting for the entry itself would beg the question the
+// count is asking. Wait for the dataLayer to stop growing instead: two identical
+// lengths a quiet window apart, or the timeout, whichever lands first.
+async function waitForDataLayerToSettle(page, quietMs = 2_000, timeout = BOOT_TIMEOUT) {
+  const deadline = Date.now() + timeout;
+  let previous = -1;
+  for (;;) {
+    await page.waitForTimeout(quietMs);
+    const length = await page.evaluate(() => (window.dataLayer || []).length);
+    if (length === previous || Date.now() > deadline) return length;
+    previous = length;
+  }
+}
+
+// Observed against the live container on 2026-08-27 — one entry, pushed after the
+// template had already set this tag's defaults through GTM's own API:
+//
+//   ["consent","default",{"ad_storage":"denied","ad_user_data":"denied",
+//    "ad_personalization":"denied","analytics_storage":"denied",
+//    "personalization_storage":"denied","functionality_storage":"granted",
+//    "security_storage":"granted","wait_for_update":500}]
+//
+// Note the shape: a global all-denied default covering seven types, none of them
+// this tag's configuration. It is the SDK's own idea of a default, not a replay.
+test('Publishers: the SDK re-sends a consent default the template already set', async ({ page }) => {
+  // sendDefaultIfNeeded(), in tcf-cmp-client/src/google-consent-mode.ts, decides a
+  // default is needed by scanning the dataLayer for a gtag-style ['consent','default']
+  // entry. GTM's setDefaultConsentState never writes one — see gtagConsentCalls above
+  // — so the scan always comes up empty and the SDK sends its own on top. The correct
+  // count is 0: by the time the SDK boots the template has already set the defaults
+  // this tag is configured with, and a second global default overrides them.
+  test.fail(true, "sendDefaultIfNeeded only scans the dataLayer, which GTM's consent API never writes to: TCF SDK re-sends consent default over the template's — tracked as an SDK ask");
+
+  await page.goto(PUBLISHERS);
+  await waitForSettings(page);
+  // The default goes out during the SDK's consent-mode init, downstream of the TCF
+  // API appearing. Waiting on __tcfapi first keeps the settle window honest and short.
+  await page.waitForFunction(() => typeof window.__tcfapi === 'function', null, { timeout: BOOT_TIMEOUT });
+  await waitForDataLayerToSettle(page);
+
+  const defaults = await gtagConsentCalls(page, 'default');
+  // The payload, not just the count: which types were denied is the whole story.
+  expect(defaults.length, `gtag consent defaults in dataLayer: ${JSON.stringify(defaults)}`).toBe(0);
+});
+
 // The cookie the SDK writes and the template reads back. Parsed rather than
 // substring-matched so the assertions can name the field they care about.
 //
@@ -196,4 +261,23 @@ test('Brands: accepting writes a cookie the template replays as an early consent
   await page.reload();
   const second = await waitForSettings(page);
   expect(second.consentUpdateAlreadySent).toBe(true);
+
+  // And what the SDK does with that head start: nothing. `consentUpdateAlreadySent`
+  // exists so the SDK can skip an update the template has already applied, but the
+  // string does not occur anywhere in either shipped bundle — /sdk.js or
+  // /tcf/sdk.js — so nothing reads it and the update goes out again on boot.
+  //
+  // The template's early update is invisible in the dataLayer — updateConsentState
+  // writes to GTM's consent model — so the entry counted here is the SDK's alone,
+  // and it is redundant with the replay the assertion just above proved happened:
+  //
+  //   ["consent","update",{"analytics_storage":"granted","ad_storage":"granted",
+  //    "ad_user_data":"granted","ad_personalization":"granted"}]
+  //
+  // Asserted as 1 because that is what happens, not as 0 because that is what we
+  // would prefer. When the SDK starts honouring the flag this fails, and the number
+  // becomes 0 in the same commit that records why.
+  await waitForDataLayerToSettle(page);
+  const updates = await gtagConsentCalls(page, 'update');
+  expect(updates.length, `gtag consent updates in dataLayer: ${JSON.stringify(updates)}`).toBe(1);
 });
