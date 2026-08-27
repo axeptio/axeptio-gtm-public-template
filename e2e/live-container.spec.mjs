@@ -264,10 +264,10 @@ test('Brands: accepting writes a cookie the template replays as an early consent
   expect(cookie.$$completed).toBe(true);
 
   // The cookie also carries `version: 2`, which is NOT a consent type. The template
-  // filters to the four types granted in access_consent; passing the extra key would
+  // filters to the consent types granted in access_consent; passing the extra key would
   // fail updateConsentState's permission check and abort the tag before injectScript.
   // So the flag below being true is also proof that filtering works against the real
-  // permissions — the coupling validate-template.mjs check 5 only enforces statically.
+  // permissions — the coupling validate-template.mjs check 4 only enforces statically.
   expect(cookie.$$googleConsentMode.version).toBeDefined();
 
   // The payoff: the real template parsed the real SDK's cookie and the real
