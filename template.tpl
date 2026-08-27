@@ -123,10 +123,10 @@ ___TEMPLATE_PARAMETERS___
           {
             "type": "REGEX",
             "args": [
-              "^[A-Za-z0-9_$]{1,8}$"
+              "^([A-Za-z0-9_$]{1,8}|\\{\\{.+\\}\\})$"
             ],
             "enablingConditions": [],
-            "errorMessage": "1 to 8 letters, digits, underscore or $"
+            "errorMessage": "1 to 8 letters, digits, underscore or $, or a GTM variable"
           }
         ],
         "help": "Only change this if your Axeptio project sets metadataPrefix in axeptioSettings. The tag reads the visitor\u0027s stored choices under this prefix and passes it to the SDK so both sides agree."
@@ -491,7 +491,17 @@ let consentUpdateAlreadySent = false;
 // on both sides: to read the cookie below, and to tell the SDK which prefix this
 // tag assumed. Falls back to '$$' — the SDK's own default — for a tag saved
 // before this field existed, which sends no value at all.
-const metadataPrefix = (typeof data.metadataPrefix === 'string' && data.metadataPrefix.trim() !== '') ? data.metadataPrefix.trim() : '$$';
+//
+// The field also accepts a GTM variable, which can resolve to a number, an
+// object, or an empty string from a lookup table that found no match. Falling
+// back to '$$' is the right outcome there too, but silently: the tag would read
+// the cookie under a prefix the publisher did not configure and find nothing.
+// Only an absent value is legitimately quiet.
+const metadataPrefixUsable = (typeof data.metadataPrefix === 'string' && data.metadataPrefix.trim() !== '');
+if (data.metadataPrefix !== undefined && !metadataPrefixUsable) {
+  logToConsole('Axeptio GTM tag: Consent cookie metadata prefix is not usable; using $$');
+}
+const metadataPrefix = metadataPrefixUsable ? data.metadataPrefix.trim() : '$$';
 
 if(data.isComoEnabled){
   
@@ -520,9 +530,19 @@ const allowedConsentTypes = ['ad_storage', 'analytics_storage', 'ad_user_data', 
 // The empty-string case is checked separately because makeNumber('') is 0, which
 // would silence the grace period entirely rather than fall back; the self-
 // inequality is the NaN test, the sandbox having no isNaN.
+//
+// A value that is present but unusable — a GTM variable resolving to text, or a
+// negative number typed past a validator that only runs in the editor — falls
+// back to 500 as well, but says so: the publisher asked for a specific grace
+// period and is not getting it. Absent and empty stay quiet, because that is
+// every tag saved before the field existed.
 const waitForUpdateInput = makeNumber(data.waitForUpdate);
-const waitForUpdate = (data.waitForUpdate === undefined || data.waitForUpdate === '' ||
-    waitForUpdateInput !== waitForUpdateInput || waitForUpdateInput < 0) ? 500 : waitForUpdateInput;
+const waitForUpdateUnset = (data.waitForUpdate === undefined || data.waitForUpdate === '');
+const waitForUpdateUsable = (waitForUpdateInput === waitForUpdateInput && waitForUpdateInput >= 0);
+if (!waitForUpdateUnset && !waitForUpdateUsable) {
+  logToConsole('Axeptio GTM tag: Wait for update is not a non-negative number; using 500');
+}
+const waitForUpdate = (waitForUpdateUnset || !waitForUpdateUsable) ? 500 : waitForUpdateInput;
 
 const parseCommandData = (settings) => {
   const commandData = {};
@@ -549,9 +569,12 @@ const parseCommandData = (settings) => {
         commandData[key] = consentValue;
       }
     }
-    else{
-      commandData[key] = settings[key];
-    }
+    // Anything else is dropped rather than forwarded. setDefaultConsentState
+    // needs write access for every key in the object it is handed, so a row key
+    // that is neither 'region' nor one of the seven types would abort the tag
+    // before injectScript and the SDK would never load. No such key exists
+    // today; this is what keeps adding a column to the table from taking the
+    // whole CMP down with it.
   }
   return commandData;
 };
@@ -565,12 +588,16 @@ const main = (data) => {
   gtagSet('developer_id.dNGFkYj', true);
   // Set default consent state(s).
   //
-  // The `|| []` is load-bearing, not defensive habit. GTM sends nothing at all for
+  // defaultRows is load-bearing, not defensive habit. GTM sends nothing at all for
   // an empty PARAM_TABLE, so a tag with Consent Mode enabled and no default rows -
   // a reasonable thing to configure, since the checkbox reads as "turn it on" -
   // arrives here with data.defaultSettings undefined. Iterating that threw a
   // TypeError before injectScript ran, so the failure was not a missing consent
-  // default: the SDK never loaded and the visitor got no CMP at all.
+  // default: the SDK never loaded and the visitor got no CMP at all. The same
+  // applies to a value that is present but not a list at all, which a hand-edited
+  // container export or a botched import can produce: an array-like check is used
+  // rather than Array.isArray, which the sandbox does not provide, and a string
+  // is excluded by the typeof even though it has a length.
   //
   // An empty table used to mean no default was ever sent to Google at all, and
   // Google treats the absence of a setDefaultConsentState call as consent
@@ -589,7 +616,10 @@ const main = (data) => {
   // on either would silently never fire. Leaving them out keeps Google's own
   // default of granted; a publisher who really wants them denied says so with a
   // row in the table.
-  if ((data.defaultSettings || []).length === 0) {
+  const rawDefaultRows = data.defaultSettings;
+  const defaultRows = (!!rawDefaultRows && typeof rawDefaultRows === 'object' &&
+    typeof rawDefaultRows.length === 'number') ? rawDefaultRows : [];
+  if (defaultRows.length === 0) {
     setDefaultConsentState({
       ad_storage: 'denied',
       analytics_storage: 'denied',
@@ -599,12 +629,25 @@ const main = (data) => {
       wait_for_update: waitForUpdate
     });
   }
-  (data.defaultSettings || []).forEach(settings => {
+  // A row whose Region is blank applies everywhere; one with regions applies only
+  // there. A table made entirely of region rows therefore sends no default at all
+  // for a visitor outside them, and Google reads the absence of a default as
+  // granted - the opposite of what the publisher is configuring row by row. That
+  // may well be deliberate for a site whose audience is only in those regions, so
+  // this changes nothing and only names it in Preview.
+  let regionlessRowSeen = false;
+  defaultRows.forEach(settings => {
     const defaultData = parseCommandData(settings);
+    if (defaultData.region === undefined) {
+      regionlessRowSeen = true;
+    }
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
     defaultData.wait_for_update = waitForUpdate;
     setDefaultConsentState(defaultData);
   });
+  if (defaultRows.length > 0 && !regionlessRowSeen) {
+    logToConsole('Axeptio GTM tag: no region-less default row; visitors outside the listed regions get Google\'s default of granted');
+  }
 
   // Early consent update from Axeptio cookie (runs before SDK loads).
   // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
@@ -626,12 +669,18 @@ const main = (data) => {
   // Same class of assumption as the classic-script coupling documented below.
   //
   // Guard 2 - configuration. The cookie carries no project id, so the only
-  // discriminator left is the cookiesVersion key's .name, which both SDKs write
-  // and which is the value this tag collects as data.cookiesVersion. Compared
-  // only when BOTH sides are non-empty: a strict match would disable early
-  // consent for every tag that leaves the field blank, which is the default.
-  // Residual gap: two Brands projects where either tag leaves it blank are
-  // still indistinguishable.
+  // discriminator left is the configuration name under the cookiesVersion key,
+  // which both SDKs write and which is the value this tag collects as
+  // data.cookiesVersion. That key is not always an object: the cookie also
+  // carries it as a bare string, the configuration name on its own. Reading only
+  // the object shape made this guard fail OPEN on the string one - no object, so
+  // no name, so no mismatch - and another project's consent was replayed and
+  // logged as a success. Both shapes are now read; anything else is treated as
+  // an unknown name, which is what every shape but the object did before.
+  // Compared only when BOTH sides are non-empty: a strict match would disable
+  // early consent for every tag that leaves the field blank, which is the
+  // default. Residual gap: two Brands projects where either tag leaves it blank
+  // are still indistinguishable.
   //
   // All three keys are built from metadataPrefix, because the project - not this
   // template - decides what they are called.
@@ -639,12 +688,16 @@ const main = (data) => {
   const googleConsentModeKey = metadataPrefix + 'googleConsentMode';
   const cookiesVersionKey = metadataPrefix + 'cookiesVersion';
 
-  // A skipped replay used to be entirely silent, which made the two ways it
-  // fails on a real site - a compressed cookie, and a cookie written under a
-  // different prefix - indistinguishable from "this visitor has not consented
-  // yet". logToConsole only reaches a debug environment, so the reasons below
-  // appear in Preview and never in production. Every branch still falls through
-  // to the SDK injection: these lines diagnose, they never change the outcome.
+  // A skipped replay used to be entirely silent, which made every way it fails on
+  // a real site - a compressed cookie, a cookie written under a different prefix,
+  // a cookie that belongs to something else entirely - indistinguishable from
+  // "this visitor has not consented yet". The branches below are exhaustive: the
+  // only way out of this block without a line in Preview is a cookie whose
+  // completed is false, which is a visitor part-way through the banner and not a
+  // failure at all.
+  // logToConsole only reaches a debug environment, so the reasons appear in
+  // Preview and never in production. Every branch still falls through to the SDK
+  // injection: these lines diagnose, they never change the outcome.
   const cookieValues = (data.product === 'publishers') ? undefined : getCookieValues('axeptio_cookies');
   if (cookieValues && cookieValues.length > 0) {
     const raw = cookieValues[0];
@@ -654,8 +707,13 @@ const main = (data) => {
       parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
     }
     const readable = !!parsed && typeof parsed === 'object';
-    const cookieConfig = (readable && typeof parsed[cookiesVersionKey] === 'object') ? parsed[cookiesVersionKey] : null;
-    const cookieVersionName = cookieConfig ? cookieConfig.name : undefined;
+    const cookieConfig = readable ? parsed[cookiesVersionKey] : undefined;
+    let cookieVersionName;
+    if (typeof cookieConfig === 'string') {
+      cookieVersionName = cookieConfig;
+    } else if (!!cookieConfig && typeof cookieConfig === 'object') {
+      cookieVersionName = cookieConfig.name;
+    }
     const configMismatch = !!data.cookiesVersion && !!cookieVersionName && cookieVersionName !== data.cookiesVersion;
     if (!readable) {
       // The Brands SDK lz-string-compresses the cookie when compressUserCookie is
@@ -682,6 +740,14 @@ const main = (data) => {
         }
         if (otherPrefixSeen) {
           logToConsole('Axeptio GTM tag: consent cookie uses a different metadata prefix; set Consent cookie metadata prefix to match; early consent skipped');
+        } else {
+          // No completed key under any prefix at all. The cookie parsed, so it is
+          // not the compressed case above; it is simply not an Axeptio consent
+          // payload - an array, an unrelated JSON object, or a cookie name reused
+          // by something else on the domain. Nothing here can be replayed, and
+          // saying so is the difference between a diagnosable misconfiguration
+          // and a head start that quietly never happens.
+          logToConsole('Axeptio GTM tag: consent cookie carries no Axeptio consent metadata; early consent skipped');
         }
       }
     } else if (!parsed[googleConsentModeKey] || typeof parsed[googleConsentModeKey] !== 'object') {
@@ -705,6 +771,15 @@ const main = (data) => {
         logToConsole('Axeptio GTM tag: early consent update from cookie');
         updateConsentState(consentModeStates);
         consentUpdateAlreadySent = true;
+      } else {
+        // A Consent Mode block that survived the checks above but says nothing
+        // this tag can act on: an empty object, or one whose every consent type
+        // is 'unset' or a value the SDK has not defined yet. Calling
+        // updateConsentState with nothing in it would be a no-op, so the replay
+        // is skipped - but this is the one remaining way a complete, readable,
+        // matching cookie still produces no early update, and it deserves a
+        // reason rather than silence.
+        logToConsole('Axeptio GTM tag: consent cookie has a Consent Mode block with no granted or denied signal; early consent skipped');
       }
     }
   }
@@ -758,24 +833,42 @@ if (metadataPrefix !== '$$') {
 // are hex — turning any of those into a number would corrupt a perfectly valid
 // setting. Only plain decimal literals qualify, checked character by character
 // because the GTM sandbox has no RegExp.
+// Two shapes that pass a naive digit count are excluded on purpose. A leading
+// zero on a multi-digit integer part ('007', '00') is how identifiers, PINs and
+// zero-padded codes are written, and makeNumber would silently drop the padding
+// the publisher typed. A trailing dot ('5.') is not something anyone means as a
+// number either; keeping the string leaves the mistake visible instead of
+// half-honouring it.
 const isNumericString = (value) => {
   let index = (value.charAt(0) === '-') ? 1 : 0;
-  let digits = 0;
-  let dots = 0;
+  let integerDigits = 0;
+  let fractionDigits = 0;
+  let seenDot = false;
+  let leadingZero = false;
   for (; index < value.length; index += 1) {
     const character = value.charAt(index);
     if (character >= '0' && character <= '9') {
-      digits += 1;
-    } else if (character === '.') {
-      dots += 1;
-      if (dots > 1) {
-        return false;
+      if (seenDot) {
+        fractionDigits += 1;
+      } else {
+        if (integerDigits === 0 && character === '0') {
+          leadingZero = true;
+        }
+        integerDigits += 1;
       }
+    } else if (character === '.' && !seenDot) {
+      seenDot = true;
     } else {
       return false;
     }
   }
-  return digits > 0;
+  if (leadingZero && integerDigits > 1) {
+    return false;
+  }
+  if (seenDot && fractionDigits === 0) {
+    return false;
+  }
+  return integerDigits + fractionDigits > 0;
 };
 
 const coerceSettingValue = (value) => {
@@ -813,6 +906,13 @@ if (additionalSettings && typeof additionalSettings.length === 'number') {
     }
     const key = typeof entry.key === 'string' ? entry.key.trim() : entry.key;
     if (!key) {
+      continue;
+    }
+    // A row with a key and no value - typed and left blank, or a GTM variable that
+    // resolved to nothing - must not write the key. Assigning undefined is not the
+    // same as leaving it out: it shadows the SDK's own default for that option
+    // with a value the SDK reads as "explicitly nothing".
+    if (entry.value === undefined) {
       continue;
     }
     axeptioSettings[key] = coerceSettingValue(entry.value);
@@ -1490,6 +1590,9 @@ scenarios:
 
     assertApi('updateConsentState').wasNotCalled();
     assertApi('injectScript').wasCalled();
+    // The silence is the point: a Publishers tag never reads the cookie at all,
+    // so there is no skipped replay to explain and nothing to say about it.
+    assertApi('logToConsole').wasNotCalled();
 - name: A cookie written by another configuration is ignored
   code: |-
     const cookie = JSON.stringify({
@@ -2013,6 +2116,251 @@ scenarios:
 
     assertApi('gtmOnSuccess').wasCalled();
     assertApi('gtmOnFailure').wasNotCalled();
+- name: A string cookies version from another configuration is ignored
+  code: |-
+    // The SDK also writes this key as a bare configuration name rather than an
+    // object. Reading only the object shape made Guard 2 fail OPEN on that shape:
+    // no config meant no name meant no mismatch, so another project's consent was
+    // replayed and logged as a success.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': 'other-project-base',
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: 'my-project-base'});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "other-project-base"');
+    assertApi('injectScript').wasCalled();
+- name: A string cookies version from this configuration is applied
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': 'my-project-base',
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: 'my-project-base'});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+- name: An empty Consent Mode block is skipped with a reason
+  code: |-
+    // Readable, complete, matching - and still nothing to replay. That was the
+    // last way the early update could come to nothing in total silence.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+- name: A Consent Mode block with no usable signal is skipped with a reason
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {ad_storage: 'unset', foo: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+- name: A cookie that is not an Axeptio payload is skipped with a reason
+  code: |-
+    // Valid JSON, so not the compressed case, and no completed key under any
+    // prefix, so not the wrong-prefix case either. Something else on the domain
+    // owns this cookie name.
+    mock('getCookieValues', () => ['[1,2,3]']);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+- name: A cookie object with no consent metadata is skipped with a reason
+  code: |-
+    mock('getCookieValues', () => ['{"foo":1}']);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+- name: Region only default rows warn about visitors elsewhere
+  code: |-
+    // Every row carries a region, so a visitor outside them is sent no default at
+    // all and Google reads that absence as granted. Nothing changes - the row is
+    // applied exactly as configured - the reason is simply named in Preview.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{region: 'FR', ad_storage: 'denied', analytics_storage: 'denied'}]
+    });
+
+    assertThat(applied).isEqualTo({
+      region: ['FR'],
+      ad_storage: 'denied',
+      analytics_storage: 'denied',
+      wait_for_update: 500
+    });
+    assertApi('logToConsole').wasCalled();
+- name: A non numeric wait for update warns and falls back to 500
+  code: |-
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({isComoEnabled: true, waitForUpdate: 'abc', defaultSettings: []});
+
+    assertThat(applied.wait_for_update).isEqualTo(500);
+    assertApi('logToConsole').wasCalled();
+- name: A negative wait for update warns and falls back to 500
+  code: |-
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({isComoEnabled: true, waitForUpdate: '-1', defaultSettings: []});
+
+    assertThat(applied.wait_for_update).isEqualTo(500);
+    assertApi('logToConsole').wasCalled();
+- name: A zero wait for update is accepted without a warning
+  code: |-
+    // Zero is a deliberate configuration - fire immediately, never wait - and must
+    // not be confused with the empty field that falls back to 500.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({isComoEnabled: true, waitForUpdate: '0', defaultSettings: []});
+
+    assertThat(applied.wait_for_update).isEqualTo(0);
+    assertApi('logToConsole').wasNotCalled();
+- name: A non string metadata prefix warns and falls back
+  code: |-
+    // The field accepts a GTM variable, which can resolve to anything at all.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], metadataPrefix: 42});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+    assertThat(settings.metadataPrefix).isUndefined();
+    assertApi('logToConsole').wasCalled();
+- name: A blank metadata prefix warns and falls back
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], metadataPrefix: '   '});
+
+    assertThat(settings.metadataPrefix).isUndefined();
+    assertApi('logToConsole').wasCalled();
+- name: Unknown default columns are dropped
+  code: |-
+    // setDefaultConsentState needs write access for every key it is handed, so a
+    // column this template does not know about would abort the tag before the SDK
+    // was injected rather than merely be ignored.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{region: '', ad_storage: 'denied', future_storage: 'granted', notes: 'hello'}]
+    });
+
+    assertThat(applied).isEqualTo({ad_storage: 'denied', wait_for_update: 500});
+    assertApi('injectScript').wasCalled();
+- name: A malformed default settings value behaves as an empty table
+  code: |-
+    // Not a list at all, which a hand-edited or badly imported container can
+    // produce. forEach on it threw before injectScript, so the tag shipped no CMP.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: 'oops'});
+
+    assertThat(applied).isEqualTo({
+      ad_storage: 'denied',
+      analytics_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      security_storage: 'granted',
+      wait_for_update: 500
+    });
+    assertApi('injectScript').wasCalled();
+    assertApi('gtmOnFailure').wasNotCalled();
+- name: Zero padded and trailing dot additional settings stay strings
+  code: |-
+    // '007' is how codes and padded identifiers are written; makeNumber would drop
+    // the padding. '5.' is not a number anyone means to type.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'code', value: '007'},
+        {key: 'trailingDot', value: '5.'}
+      ]
+    });
+
+    assertThat(settings.code).isString();
+    assertThat(settings.code).isEqualTo('007');
+    assertThat(settings.trailingDot).isString();
+    assertThat(settings.trailingDot).isEqualTo('5.');
+- name: Zero and plain decimals still become numbers
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'zero', value: '0'},
+        {key: 'half', value: '0.5'},
+        {key: 'negativeHalf', value: '-0.5'},
+        {key: 'ten', value: '10'}
+      ]
+    });
+
+    assertThat(settings.zero).isNumber();
+    assertThat(settings.zero).isEqualTo(0);
+    assertThat(settings.half).isEqualTo(0.5);
+    assertThat(settings.negativeHalf).isEqualTo(-0.5);
+    assertThat(settings.ten).isEqualTo(10);
+- name: An additional setting row without a value writes nothing
+  code: |-
+    // Assigning undefined is not the same as leaving the key out: it would shadow
+    // whatever the tag had already put there. clientId makes that visible.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      axeptioAdditionalSettings: [
+        {key: 'clientId'},
+        {key: 'mountElementId', value: 'axeptio-widget'}
+      ]
+    });
+
+    assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
+    assertThat(settings.mountElementId).isEqualTo('axeptio-widget');
 
 
 ___NOTES___

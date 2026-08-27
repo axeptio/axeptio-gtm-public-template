@@ -77,9 +77,8 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | Redact Ads Data | Stops advertising cookies being set while `ad_storage` is denied. |
 | Pass through URL parameters | Preserves ad click information across pages when cookies are denied. |
 
-When a returning visitor's stored consent cannot be replayed before the SDK loads, the tag
-logs the reason in GTM Preview — a compressed cookie (`compressUserCookie`), a cookie written
-under another metadata prefix, or a cookie with no Consent Mode block.
+Whenever the tag skips the replay of a returning visitor's stored consent, or falls back on a
+setting it cannot use, it names the reason in GTM Preview — and only there, never in production.
 
 </details>
 
