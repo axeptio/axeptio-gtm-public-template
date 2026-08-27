@@ -115,17 +115,37 @@ test('the two fixtures load different bundles', async ({ page }) => {
 
 // The cookie the SDK writes and the template reads back. Parsed rather than
 // substring-matched so the assertions can name the field they care about.
-// decodeURIComponent is safe on both forms: the SDK writes it URL-encoded, the
-// template accepts either, and raw JSON contains no percent sequences to decode.
+//
+// Raw first, decoded second — the same order of preference template.tpl uses. The
+// SDK writes it URL-encoded today, but decoding first is not free: a raw value
+// containing a stray `%` makes decodeURIComponent throw, and one containing a
+// literal `%xx` would be silently rewritten. Either way the helper would return
+// null and the failure would read as "no cookie" rather than "unparseable".
 async function readAxeptioCookie(page) {
   return page.evaluate(() => {
-    const hit = document.cookie.split('; ').find((c) => c.startsWith('axeptio_cookies='));
+    // Split on ';' and trim rather than on '; ': the separator is conventional,
+    // not guaranteed, and trimming costs nothing.
+    const hit = document.cookie
+      .split(';')
+      .map((c) => c.trim())
+      .find((c) => c.startsWith('axeptio_cookies='));
     if (!hit) return null;
+
+    const raw = hit.slice('axeptio_cookies='.length);
+    const candidates = [raw];
     try {
-      return JSON.parse(decodeURIComponent(hit.slice('axeptio_cookies='.length)));
+      candidates.push(decodeURIComponent(raw));
     } catch {
-      return null;
+      // Not percent-encoded; the raw candidate still stands.
     }
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // Try the next form.
+      }
+    }
+    return null;
   });
 }
 
@@ -144,16 +164,24 @@ test('Brands: accepting writes a cookie the template replays as an early consent
   await page.locator('#axeptio_btn_acceptAll').click();
 
   // The SDK persists the choice asynchronously, hence the poll rather than a wait.
-  await expect
-    .poll(async () => (await readAxeptioCookie(page))?.$$completed, { timeout: BOOT_TIMEOUT })
-    .toBe(true);
-
+  //
+  // Polled on the consent block itself rather than on $$completed. A cookie write
+  // replaces the whole value, so in principle $$completed cannot arrive without the
+  // rest of that same write — but that reasoning assumes the SDK writes once, which
+  // is its business to change, and waiting on the field this test actually depends
+  // on costs nothing and cannot race.
+  //
   // $$googleConsentMode is the block template.tpl reads. It is written only when the
   // Axeptio project has Google Consent Mode enabled, so this doubles as a check on
   // the CI project's configuration — if it silently loses that setting, the early
   // update stops happening in production too and this is where it surfaces.
+  await expect
+    .poll(async () => (await readAxeptioCookie(page))?.$$googleConsentMode?.ad_storage,
+      { timeout: BOOT_TIMEOUT })
+    .toBe('granted');
+
   const cookie = await readAxeptioCookie(page);
-  expect(cookie.$$googleConsentMode).toMatchObject({ ad_storage: 'granted' });
+  expect(cookie.$$completed).toBe(true);
 
   // The cookie also carries `version: 2`, which is NOT a consent type. The template
   // filters to the four types granted in access_consent; passing the extra key would
