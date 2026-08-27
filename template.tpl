@@ -296,9 +296,84 @@ ___TEMPLATE_PARAMETERS___
               "defaultValue": "denied"
             },
             "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "functionality_storage",
+              "displayName": "Functionality storage",
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                },
+                {
+                  "value": "unset",
+                  "displayValue": "Not set"
+                }
+              ],
+              "simpleValueType": true,
+              "defaultValue": "unset",
+              "help": "Leave this on Not set unless your project sends this signal. The Brands SDK only ever updates the four types above, so a default of Denied here would never be lifted and a tag gated on it would never fire; Not set leaves Google\u0027s own default of granted in place."
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "personalization_storage",
+              "displayName": "Personalization storage",
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                },
+                {
+                  "value": "unset",
+                  "displayValue": "Not set"
+                }
+              ],
+              "simpleValueType": true,
+              "defaultValue": "unset",
+              "help": "Leave this on Not set unless your project sends this signal. Same reasoning as Functionality storage: a Brands visitor never sends an update for it, so a default of Denied would be permanent."
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "security_storage",
+              "displayName": "Security storage",
+              "selectItems": [
+                {
+                  "value": "denied",
+                  "displayValue": "Denied"
+                },
+                {
+                  "value": "granted",
+                  "displayValue": "Granted"
+                },
+                {
+                  "value": "unset",
+                  "displayValue": "Not set"
+                }
+              ],
+              "simpleValueType": true,
+              "defaultValue": "granted",
+              "help": "Storage used for security, such as authentication and fraud prevention. Every other CMP template grants it by default because denying it breaks sign-in and bot protection."
+            },
+            "isUnique": false
           }
         ],
-        "help": "Leave this table empty to deny all four types in every region. Add rows for per-region defaults; Region accepts comma-separated ISO 3166-2 codes, or leave it blank to apply to every region.",
+        "help": "Leave this table empty to deny the four advertising and analytics types in every region and grant security_storage. Add rows for per-region defaults; Region accepts comma-separated ISO 3166-2 codes, or leave it blank to apply to every region. A column left on Not set sends no default for that type, which leaves Google\u0027s own default of granted.",
         "enablingConditions": [
           {
             "paramName": "isComoEnabled",
@@ -306,6 +381,26 @@ ___TEMPLATE_PARAMETERS___
             "type": "EQUALS"
           }
         ]
+      },
+      {
+        "type": "TEXT",
+        "name": "waitForUpdate",
+        "displayName": "Wait for update (ms)",
+        "simpleValueType": true,
+        "defaultValue": 500,
+        "valueValidators": [
+          {
+            "type": "NON_NEGATIVE_NUMBER"
+          }
+        ],
+        "enablingConditions": [
+          {
+            "paramName": "isComoEnabled",
+            "paramValue": true,
+            "type": "EQUALS"
+          }
+        ],
+        "help": "How long Google tags wait for the visitor\u0027s stored choice before using the defaults above. 500 ms covers the replay from the consent cookie; raise it (Usercentrics and Cookiebot use 2000) if tags fire before the banner on a first visit."
       },
       {
         "type": "CHECKBOX",
@@ -407,6 +502,29 @@ if(data.isComoEnabled){
       .filter(entry => entry.length !== 0);
 };
 
+// The Google consent types this tag is allowed to speak about, used both by the
+// Default Settings rows below and by the replay from the consent cookie further
+// down. setDefaultConsentState and updateConsentState both need *write* access
+// for EVERY key in the object they are handed, so a single type missing from the
+// access_consent permission block fails the whole call and aborts the tag before
+// injectScript - the SDK would never load. Keep this list and access_consent in
+// sync; scripts/validate-template.mjs check 4 enforces it.
+const allowedConsentTypes = ['ad_storage', 'analytics_storage', 'ad_user_data', 'ad_personalization',
+  'functionality_storage', 'personalization_storage', 'security_storage'];
+
+// How long Google tags hold events waiting for the CMP's answer before falling
+// back to the defaults below. 500 ms covers the replay from the consent cookie,
+// which happens in this same tag, and stays the value every tag saved before this
+// field existed keeps using. A site whose tags fire before the banner on a first
+// visit needs longer - Usercentrics and Cookiebot ship 2000.
+//
+// The empty-string case is checked separately because makeNumber('') is 0, which
+// would silence the grace period entirely rather than fall back; the self-
+// inequality is the NaN test, the sandbox having no isNaN.
+const waitForUpdateInput = makeNumber(data.waitForUpdate);
+const waitForUpdate = (data.waitForUpdate === undefined || data.waitForUpdate === '' ||
+    waitForUpdateInput !== waitForUpdateInput || waitForUpdateInput < 0) ? 500 : waitForUpdateInput;
+
 const parseCommandData = (settings) => {
   const commandData = {};
   for(const key in settings){
@@ -414,6 +532,22 @@ const parseCommandData = (settings) => {
       const regions = splitInput(settings[key]);
       if (regions.length > 0) {
         commandData.region = regions;
+      }
+    }
+    else if (allowedConsentTypes.indexOf(key) !== -1) {
+      // A consent column is copied only when it actually says granted or denied.
+      // The two preference columns default to 'unset' - the SELECT's third choice
+      // - because Google treats a type it was never given a default for as
+      // granted, and on a Brands site that is the only value the type can ever
+      // reach: the Brands SDK emits just the four core types in its consent
+      // update, so a denied default on functionality_storage or
+      // personalization_storage would never be lifted and a tag gated on one
+      // would silently never fire. Dropping the key leaves Google's own default
+      // in place. A row saved before these columns existed carries no such key at
+      // all, so it behaves exactly as it did before.
+      const consentValue = settings[key];
+      if (consentValue === 'granted' || consentValue === 'denied') {
+        commandData[key] = consentValue;
       }
     }
     else{
@@ -443,21 +577,33 @@ const main = (data) => {
   // Google treats the absence of a setDefaultConsentState call as consent
   // granted - the opposite of what enabling Consent Mode is meant to do. Every
   // competitor template falls back to denied in this case, so when there are no
-  // rows we send one explicit denied default for all four types, globally,
-  // before the (now empty) per-row loop below runs.
+  // rows we send one explicit denied default for the four advertising and
+  // analytics types, globally, before the (now empty) per-row loop below runs.
+  //
+  // security_storage is granted, as every competitor template does: it covers
+  // authentication and fraud prevention, and denying it by default breaks sign-in
+  // on sites that never think about it.
+  //
+  // functionality_storage and personalization_storage are deliberately absent. A
+  // Brands site can never lift them - its SDK emits only the four core types in
+  // its consent update - so denying them here would be permanent, and a tag gated
+  // on either would silently never fire. Leaving them out keeps Google's own
+  // default of granted; a publisher who really wants them denied says so with a
+  // row in the table.
   if ((data.defaultSettings || []).length === 0) {
     setDefaultConsentState({
       ad_storage: 'denied',
       analytics_storage: 'denied',
       ad_user_data: 'denied',
       ad_personalization: 'denied',
-      wait_for_update: 500
+      security_storage: 'granted',
+      wait_for_update: waitForUpdate
     });
   }
   (data.defaultSettings || []).forEach(settings => {
     const defaultData = parseCommandData(settings);
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
-    defaultData.wait_for_update = 500;
+    defaultData.wait_for_update = waitForUpdate;
     setDefaultConsentState(defaultData);
   });
 
@@ -544,15 +690,12 @@ const main = (data) => {
     } else {
       const gcm = parsed[googleConsentModeKey];
       const consentModeStates = {};
-      // Only the consent types granted write access in the web permissions block
-      // (access_consent). updateConsentState requires write access for *every*
-      // type in the object, so passing one that isn't granted fails the
-      // permission check and aborts the tag before injectScript — the SDK would
-      // never load. The cookie is client-side and Axeptio also supports the
-      // optional functionality_storage / personalization_storage /
-      // security_storage signals, so the key set can't be trusted. Keep this
-      // list in sync with the access_consent permission.
-      const allowedConsentTypes = ['ad_storage', 'analytics_storage', 'ad_user_data', 'ad_personalization'];
+      // The cookie is written by the SDK, not by this tag, and it carries more
+      // than consent: bookkeeping keys, a payload version, whatever a future
+      // release adds. Anything that is not one of the seven types allowedConsentTypes
+      // grants - or that carries a value other than granted/denied - is dropped,
+      // because updateConsentState needs write access for every key it is handed
+      // and one stray key aborts the tag before injectScript.
       for (const key in gcm) {
         const val = gcm[key];
         if (allowedConsentTypes.indexOf(key) !== -1 && (val === 'granted' || val === 'denied')) {
@@ -1040,6 +1183,99 @@ ___WEB_PERMISSIONS___
                     "boolean": true
                   }
                 ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "functionality_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "personalization_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "consentType"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "security_storage"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
               }
             ]
           }
@@ -1156,6 +1392,10 @@ scenarios:
     assertThat(settings.platform).isEqualTo('tms-gtm');
 - name: Only allowlisted consent types reach updateConsentState
   code: |-
+    // All seven Google types now have write access, so they pass. The filter is
+    // still load-bearing: the cookie also carries keys that are not consent types,
+    // and one of those reaching updateConsentState aborts the tag before the SDK
+    // is injected.
     const cookie = JSON.stringify({
       '$$completed': true,
       '$$googleConsentMode': {
@@ -1165,7 +1405,9 @@ scenarios:
         ad_personalization: 'denied',
         functionality_storage: 'granted',
         personalization_storage: 'granted',
-        security_storage: 'granted'
+        security_storage: 'granted',
+        version: 2,
+        foo: 'granted'
       }
     });
     let states;
@@ -1178,7 +1420,10 @@ scenarios:
       ad_storage: 'granted',
       analytics_storage: 'denied',
       ad_user_data: 'granted',
-      ad_personalization: 'denied'
+      ad_personalization: 'denied',
+      functionality_storage: 'granted',
+      personalization_storage: 'granted',
+      security_storage: 'granted'
     });
 - name: A URL-encoded consent cookie is decoded
   code: |-
@@ -1667,6 +1912,7 @@ scenarios:
       analytics_storage: 'denied',
       ad_user_data: 'denied',
       ad_personalization: 'denied',
+      security_storage: 'granted',
       wait_for_update: 500
     });
     assertApi('injectScript').wasCalled();
@@ -1683,8 +1929,83 @@ scenarios:
       analytics_storage: 'denied',
       ad_user_data: 'denied',
       ad_personalization: 'denied',
+      security_storage: 'granted',
       wait_for_update: 500
     });
+- name: Unset extra storage types are omitted from the default
+  code: |-
+    // Google treats a type it was never given a default for as granted, which is
+    // the only value a Brands site can reach for these two: its SDK updates only
+    // the four core types, so a denied default here would never be lifted.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{
+        region: '',
+        ad_storage: 'denied',
+        functionality_storage: 'unset',
+        personalization_storage: 'unset',
+        security_storage: 'granted'
+      }]
+    });
+
+    assertThat(applied.ad_storage).isEqualTo('denied');
+    assertThat(applied.security_storage).isEqualTo('granted');
+    assertThat(applied.functionality_storage).isUndefined();
+    assertThat(applied.personalization_storage).isUndefined();
+- name: Extra storage types set to denied are applied
+  code: |-
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{
+        region: '',
+        functionality_storage: 'denied',
+        personalization_storage: 'denied',
+        security_storage: 'denied'
+      }]
+    });
+
+    assertThat(applied).isEqualTo({
+      functionality_storage: 'denied',
+      personalization_storage: 'denied',
+      security_storage: 'denied',
+      wait_for_update: 500
+    });
+- name: Wait for update is configurable
+  code: |-
+    const applied = [];
+    mock('setDefaultConsentState', (value) => { applied.push(value); });
+
+    runCode({
+      isComoEnabled: true,
+      waitForUpdate: '2000',
+      defaultSettings: [{region: '', ad_storage: 'denied'}]
+    });
+    runCode({isComoEnabled: true, waitForUpdate: '2000', defaultSettings: []});
+
+    assertThat(applied[0].wait_for_update).isEqualTo(2000);
+    assertThat(applied[1].wait_for_update).isEqualTo(2000);
+- name: A blank wait for update falls back to 500
+  code: |-
+    // makeNumber('') is 0, which would remove the grace period altogether, and a
+    // tag saved before the field existed sends nothing at all.
+    const applied = [];
+    mock('setDefaultConsentState', (value) => { applied.push(value); });
+
+    runCode({
+      isComoEnabled: true,
+      waitForUpdate: '',
+      defaultSettings: [{region: '', ad_storage: 'denied'}]
+    });
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertThat(applied[0].wait_for_update).isEqualTo(500);
+    assertThat(applied[1].wait_for_update).isEqualTo(500);
 - name: gtmOnSuccess fires when the SDK script loads
   code: |-
     mock('injectScript', (url, onSuccess) => { onSuccess(); });

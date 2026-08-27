@@ -72,7 +72,8 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | Field | What it does |
 | --- | --- |
 | Activate Google Consent Mode v2 | Master switch, **on by default**. |
-| Default Settings | Per-region defaults for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`. Leaving the table empty denies all four types in every region — it does not mean "no default". |
+| Default Settings | Per-region defaults for all seven consent types: `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`, `functionality_storage`, `personalization_storage`, `security_storage`. `security_storage` defaults to **Granted** (denying it breaks sign-in and fraud prevention); `functionality_storage` and `personalization_storage` default to **Not set**, which sends no default for them and so leaves Google's own default of granted — a Brands site only ever updates the four advertising and analytics types, so a denied default there would never be lifted. Leaving the table empty denies those four in every region and grants `security_storage` — it does not mean "no default". |
+| Wait for update (ms) | How long Google tags wait for the visitor's stored choice before using the defaults above. Defaults to `500`, which covers the replay from the consent cookie; raise it (2000 is common) if tags fire before the banner on a first visit. |
 | Redact Ads Data | Stops advertising cookies being set while `ad_storage` is denied. |
 | Pass through URL parameters | Preserves ad click information across pages when cookies are denied. |
 

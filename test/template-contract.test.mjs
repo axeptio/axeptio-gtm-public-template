@@ -45,13 +45,16 @@ test('template.tpl passes every contract check', () => {
 });
 
 test('catches a consent type that access_consent cannot write', () => {
+  // All seven Google consent types are granted now, so the negative case is a
+  // container-defined custom consent type - which is exactly what an unfiltered
+  // cookie key could turn out to be.
   const violations = violationsAfter(
     replaceOnce(
       "const allowedConsentTypes = ['ad_storage'",
-      "const allowedConsentTypes = ['functionality_storage', 'ad_storage'",
+      "const allowedConsentTypes = ['my_custom_consent', 'ad_storage'",
     ),
   );
-  assert.equal(matching(violations, /functionality_storage.*access_consent/).length, 1, violations.join('\n'));
+  assert.equal(matching(violations, /my_custom_consent.*access_consent/).length, 1, violations.join('\n'));
 });
 
 test('catches a renamed template parameter', () => {
