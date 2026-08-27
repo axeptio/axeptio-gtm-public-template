@@ -484,6 +484,31 @@ const decodeUriComponent = require('decodeUriComponent');
 
 let consentUpdateAlreadySent = false;
 
+// The Additional Axeptio Settings rows are needed twice: once down at the bottom,
+// where every row is coerced onto axeptioSettings, and once here, because one of
+// them - metadataPrefix - decides how this tag reads the consent cookie and so
+// has to be known before the replay runs. This looks the row up without touching
+// the coercion loop; the loop stays the single place a row becomes a setting.
+// The legacy alias is kept for tags saved before the field was renamed.
+const additionalSettings = data.axeptioAdditionalSettings || data.additionalSettings;
+const findAdditionalSetting = (name) => {
+  if (!additionalSettings || typeof additionalSettings.length !== 'number') {
+    return undefined;
+  }
+  let found;
+  for (let index = 0; index < additionalSettings.length; index += 1) {
+    const entry = additionalSettings[index];
+    if (!!entry && typeof entry === 'object') {
+      const entryKey = typeof entry.key === 'string' ? entry.key.trim() : entry.key;
+      // Last row wins, matching the coercion loop below, which assigns in order.
+      if (entryKey === name) {
+        found = entry.value;
+      }
+    }
+  }
+  return found;
+};
+
 // An Axeptio project can rename the prefix the SDK writes its bookkeeping keys
 // under (axeptioSettings.metadataPrefix), so '$$completed' becomes e.g.
 // 'ax_completed'. Hardcoding '$$' made the early replay find nothing on those
@@ -501,7 +526,32 @@ const metadataPrefixUsable = (typeof data.metadataPrefix === 'string' && data.me
 if (data.metadataPrefix !== undefined && !metadataPrefixUsable) {
   logToConsole('Axeptio GTM tag: Consent cookie metadata prefix is not usable; using $$');
 }
-const metadataPrefix = metadataPrefixUsable ? data.metadataPrefix.trim() : '$$';
+const metadataPrefixField = metadataPrefixUsable ? data.metadataPrefix.trim() : '$$';
+
+// The same setting can also be spelled as an Additional Settings row, and that
+// row used to WIN by accident: the field wrote axeptioSettings.metadataPrefix and
+// the coercion loop overwrote it a few lines later, so the tag read the cookie
+// under one prefix while the SDK wrote under another - precisely the desync the
+// field exists to end. One value is resolved here and used for both jobs.
+//
+// The field wins when it is set to anything but the default, because it is the
+// one of the two this template validates and the one an installer sees. A row is
+// honoured when the field is left alone, so a project that already carried the
+// setting in the table keeps working without being re-entered. A row that is not
+// a usable string cannot be read from, so it is not used and not forwarded
+// either; that is what makes the two sides agree rather than merely look set.
+const metadataPrefixRowValue = findAdditionalSetting('metadataPrefix');
+const metadataPrefixRow = (typeof metadataPrefixRowValue === 'string' &&
+  metadataPrefixRowValue.trim() !== '') ? metadataPrefixRowValue.trim() : undefined;
+let metadataPrefix = '$$';
+if (metadataPrefixField !== '$$') {
+  metadataPrefix = metadataPrefixField;
+  if (metadataPrefixRow !== undefined && metadataPrefixRow !== metadataPrefixField) {
+    logToConsole('Axeptio GTM tag: Consent cookie metadata prefix field overrides the metadataPrefix row in Additional Settings');
+  }
+} else if (metadataPrefixRow !== undefined) {
+  metadataPrefix = metadataPrefixRow;
+}
 
 if(data.isComoEnabled){
   
@@ -529,15 +579,19 @@ const allowedConsentTypes = ['ad_storage', 'analytics_storage', 'ad_user_data', 
 //
 // The empty-string case is checked separately because makeNumber('') is 0, which
 // would silence the grace period entirely rather than fall back; the self-
-// inequality is the NaN test, the sandbox having no isNaN.
+// inequality is the NaN test, the sandbox having no isNaN. A string is trimmed
+// before either test, because makeNumber(' ') is 0 too - a field holding nothing
+// but spaces would otherwise turn the grace period off instead of falling back,
+// and do it without a word.
 //
 // A value that is present but unusable — a GTM variable resolving to text, or a
 // negative number typed past a validator that only runs in the editor — falls
 // back to 500 as well, but says so: the publisher asked for a specific grace
 // period and is not getting it. Absent and empty stay quiet, because that is
 // every tag saved before the field existed.
-const waitForUpdateInput = makeNumber(data.waitForUpdate);
-const waitForUpdateUnset = (data.waitForUpdate === undefined || data.waitForUpdate === '');
+const waitForUpdateRaw = (typeof data.waitForUpdate === 'string') ? data.waitForUpdate.trim() : data.waitForUpdate;
+const waitForUpdateInput = makeNumber(waitForUpdateRaw);
+const waitForUpdateUnset = (waitForUpdateRaw === undefined || waitForUpdateRaw === '');
 const waitForUpdateUsable = (waitForUpdateInput === waitForUpdateInput && waitForUpdateInput >= 0);
 if (!waitForUpdateUnset && !waitForUpdateUsable) {
   logToConsole('Axeptio GTM tag: Wait for update is not a non-negative number; using 500');
@@ -729,12 +783,15 @@ const main = (data) => {
       // false and that is normal, so it stays quiet. Absent, while some other key
       // ends in 'completed', means the cookie is fine and this tag is reading the
       // wrong prefix - a configuration mistake worth naming. Plain for-in and
-      // indexOf because the sandbox has no RegExp.
+      // lastIndexOf because the sandbox has no RegExp; lastIndexOf and not
+      // indexOf, so that a prefix which itself contains the word - a project set
+      // to 'completed_', giving 'completed_completed' - is still recognised as an
+      // ends-with rather than dismissed as no match at all.
       if (parsed[completedKey] === undefined) {
         let otherPrefixSeen = false;
         for (const cookieKey in parsed) {
           if (cookieKey !== completedKey && cookieKey.length >= 9 &&
-              cookieKey.indexOf('completed') === cookieKey.length - 9) {
+              cookieKey.lastIndexOf('completed') === cookieKey.length - 9) {
             otherPrefixSeen = true;
           }
         }
@@ -806,9 +863,12 @@ if (consentUpdateAlreadySent) {
 }
 
 // Sent only when it differs from the SDK's own default, so a tag that never
-// touched the field - and every tag saved before the field existed - hands the
-// SDK exactly the settings object it handed before. When it is set, both sides
-// agree on the prefix instead of the project quietly deciding on its own.
+// touched the field or the row - and every tag saved before the field existed -
+// hands the SDK exactly the settings object it handed before. When it is set,
+// both sides agree on the prefix instead of the project quietly deciding on its
+// own. This is the resolved value, so it holds whether it came from the field or
+// from an Additional Settings row; the loop below skips that row rather than
+// writing over what is decided here.
 if (metadataPrefix !== '$$') {
   axeptioSettings.metadataPrefix = metadataPrefix;
 }
@@ -897,7 +957,6 @@ const coerceSettingValue = (value) => {
   return value;
 };
 
-const additionalSettings = data.axeptioAdditionalSettings || data.additionalSettings;
 if (additionalSettings && typeof additionalSettings.length === 'number') {
   for (let index = 0; index < additionalSettings.length; index += 1) {
     const entry = additionalSettings[index];
@@ -906,6 +965,13 @@ if (additionalSettings && typeof additionalSettings.length === 'number') {
     }
     const key = typeof entry.key === 'string' ? entry.key.trim() : entry.key;
     if (!key) {
+      continue;
+    }
+    // metadataPrefix was already resolved at the top, together with the field it
+    // competes with, and forwarded above. Writing it again here is what used to
+    // let the row silently win over the field, leaving the tag reading the cookie
+    // under one prefix and the SDK writing under another.
+    if (key === 'metadataPrefix') {
       continue;
     }
     // A row with a key and no value - typed and left blank, or a GTM variable that
@@ -1491,10 +1557,14 @@ scenarios:
     assertThat(settings.platform).isEqualTo('tms-gtm');
 - name: Only allowlisted consent types reach updateConsentState
   code: |-
-    // All seven Google types now have write access, so they pass. The filter is
-    // still load-bearing: the cookie also carries keys that are not consent types,
-    // and one of those reaching updateConsentState aborts the tag before the SDK
-    // is injected.
+    // All seven Google types now have write access, so they pass. The Brands SDK
+    // writes only the four core types today - which is why the two preference
+    // columns in Default Settings say to leave them Not set - and this seven-key
+    // shape is what the TCF build computes and will persist (gtm-d1b), so the
+    // replay has to be ready to pass it through. The filter is still
+    // load-bearing: the cookie also carries keys that are not consent types, and
+    // one of those reaching updateConsentState aborts the tag before the SDK is
+    // injected.
     const cookie = JSON.stringify({
       '$$completed': true,
       '$$googleConsentMode': {
@@ -2361,6 +2431,82 @@ scenarios:
 
     assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
     assertThat(settings.mountElementId).isEqualTo('axeptio-widget');
+- name: A metadataPrefix row drives the cookie read and reaches the SDK
+  code: |-
+    // The setting can be spelled either as the field or as an Additional Settings
+    // row. With only the row, the tag used to read the cookie under the default
+    // prefix and find nothing, then let the row overwrite what it forwarded - so
+    // it looked configured and behaved as though it was not.
+    const cookie = JSON.stringify({
+      'ax_completed': true,
+      'ax_googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      axeptioAdditionalSettings: [{key: 'metadataPrefix', value: 'ax_'}]
+    });
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+    assertThat(settings.metadataPrefix).isEqualTo('ax_');
+- name: The metadata prefix field beats a conflicting row
+  code: |-
+    // Both sides set, and disagreeing. The field is the one this template
+    // validates and the one an installer sees, so it wins - and the row that lost
+    // is named rather than dropped silently.
+    const cookie = JSON.stringify({
+      'ax_completed': true,
+      'ax_googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      metadataPrefix: 'ax_',
+      axeptioAdditionalSettings: [{key: 'metadataPrefix', value: 'zz_'}]
+    });
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+    assertThat(settings.metadataPrefix).isEqualTo('ax_');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: Consent cookie metadata prefix field overrides the metadataPrefix row in Additional Settings');
+- name: A whitespace only wait for update falls back to 500 quietly
+  code: |-
+    // makeNumber(' ') is 0, so a field holding nothing but spaces would have
+    // turned the grace period off rather than fallen back to it.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({isComoEnabled: true, waitForUpdate: '   ', defaultSettings: []});
+
+    assertThat(applied.wait_for_update).isEqualTo(500);
+    assertApi('logToConsole').wasNotCalled();
+- name: A prefix containing the word completed is still recognised
+  code: |-
+    // The scan is an ends-with test. Reading the FIRST occurrence missed a key
+    // whose prefix contains the word too, and reported the cookie as carrying no
+    // Axeptio metadata at all rather than as written under another prefix.
+    const cookie = JSON.stringify({
+      'completed_completed': true,
+      'completed_googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: consent cookie uses a different metadata prefix; set Consent cookie metadata prefix to match; early consent skipped');
+    assertApi('injectScript').wasCalled();
 
 
 ___NOTES___
