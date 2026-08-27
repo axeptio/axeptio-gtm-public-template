@@ -372,7 +372,7 @@ ___TEMPLATE_PARAMETERS___
             "isUnique": false
           }
         ],
-        "help": "Leave this table empty to deny the four advertising and analytics types in every region and grant security_storage. Add rows for per-region defaults; Region accepts comma-separated ISO 3166-2 codes, or leave it blank to apply to every region. A column left on Not set sends no default for that type, which leaves Google\u0027s own default of granted.",
+        "help": "Leave this table empty to deny the four advertising and analytics types in every region and grant security_storage. Add rows for per-region defaults; Region accepts comma-separated ISO 3166-2 codes (a country such as FR, or a subdivision such as US-CA), or leave it blank to apply to every region. A column left on Not set sends no default for that type, which leaves Google\u0027s own default of granted.",
         "enablingConditions": [
           {
             "paramName": "isComoEnabled",
