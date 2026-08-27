@@ -22,10 +22,14 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: 4813bca0c82d09a7ec1dc05dcca0fc563fa3e29c
+    changeNotes: |-
+      - **ci:** harden the two paths Copilot flagged on the sync
+      - **ci:** stop the GTM sync republishing on every run
+  # Older versions
   - sha: 55809818376265b3ba81e7bad7497f5a6d6da555
     changeNotes: |-
       - **template:** keep the JSON blocks in GTM's canonical escaping
-  # Older versions
   - sha: 5d6382f64703e701495c7f00dbe162abedf735e4
     changeNotes: |-
       - **template:** load the SDK when Consent Mode has no default rows
