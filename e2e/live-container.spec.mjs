@@ -112,3 +112,60 @@ test('the two fixtures load different bundles', async ({ page }) => {
   expect(onBrands).not.toContain('/tcf/sdk.js');
   expect(onPublishers).not.toContain('/sdk.js');
 });
+
+// The cookie the SDK writes and the template reads back. Parsed rather than
+// substring-matched so the assertions can name the field they care about.
+// decodeURIComponent is safe on both forms: the SDK writes it URL-encoded, the
+// template accepts either, and raw JSON contains no percent sequences to decode.
+async function readAxeptioCookie(page) {
+  return page.evaluate(() => {
+    const hit = document.cookie.split('; ').find((c) => c.startsWith('axeptio_cookies='));
+    if (!hit) return null;
+    try {
+      return JSON.parse(decodeURIComponent(hit.slice('axeptio_cookies='.length)));
+    } catch {
+      return null;
+    }
+  });
+}
+
+test('Brands: accepting writes a cookie the template replays as an early consent update', async ({ page }) => {
+  // The round trip no cheaper layer can prove. The unit scenarios feed the parser a
+  // hand-written cookie and the hermetic suite stubs the bundle, so both assert that
+  // the template handles a cookie *we* wrote. Only here does the real SDK write it.
+  await page.goto(BRANDS);
+
+  // Nothing to replay on a first visit, so the flag must be absent. Asserting this
+  // before accepting is what stops the final assertion passing on a warm cookie.
+  const first = await waitForSettings(page);
+  expect(first.consentUpdateAlreadySent).toBeUndefined();
+  await expect(page.locator('#axeptio_overlay')).toBeAttached({ timeout: BOOT_TIMEOUT });
+
+  await page.locator('#axeptio_btn_acceptAll').click();
+
+  // The SDK persists the choice asynchronously, hence the poll rather than a wait.
+  await expect
+    .poll(async () => (await readAxeptioCookie(page))?.$$completed, { timeout: BOOT_TIMEOUT })
+    .toBe(true);
+
+  // $$googleConsentMode is the block template.tpl reads. It is written only when the
+  // Axeptio project has Google Consent Mode enabled, so this doubles as a check on
+  // the CI project's configuration — if it silently loses that setting, the early
+  // update stops happening in production too and this is where it surfaces.
+  const cookie = await readAxeptioCookie(page);
+  expect(cookie.$$googleConsentMode).toMatchObject({ ad_storage: 'granted' });
+
+  // The cookie also carries `version: 2`, which is NOT a consent type. The template
+  // filters to the four types granted in access_consent; passing the extra key would
+  // fail updateConsentState's permission check and abort the tag before injectScript.
+  // So the flag below being true is also proof that filtering works against the real
+  // permissions — the coupling validate-template.mjs check 5 only enforces statically.
+  expect(cookie.$$googleConsentMode.version).toBeDefined();
+
+  // The payoff: the real template parsed the real SDK's cookie and the real
+  // updateConsentState call succeeded. Had the permission check failed, the tag would
+  // have aborted and axeptioSettings would never appear — a timeout, not a false pass.
+  await page.reload();
+  const second = await waitForSettings(page);
+  expect(second.consentUpdateAlreadySent).toBe(true);
+});

@@ -9,7 +9,7 @@ pull request; the last two need credentials and never block a merge.
 | Template contract | `npm run validate` | yes | drift *between* the template's sections |
 | Hermetic browser | `npm run e2e` | yes | the settings-then-inject ordering, permission failures |
 | GTM compile | `npm run gtm:compile` | no | anything GTM's own compiler rejects |
-| Live container | `npm run e2e:live` | no | the real SDK failing to boot |
+| Live container | `npm run e2e:live` | no | the real SDK failing to boot, the consent round trip |
 
 `npm test` runs the first two together — the contract validator is wired in through
 `test/template-contract.test.mjs` so it cannot be forgotten.
@@ -40,7 +40,10 @@ restricted subset rejects passes locally and fails on import. It is non-destruct
 an ephemeral workspace, a `quick_preview`, then the workspace is deleted.
 
 **The live suite** loads a real container and the genuine ~700 KB bundle. It is the
-only layer that can tell you the SDK itself broke.
+only layer that can tell you the SDK itself broke. It also drives the one round trip
+that has no cheaper equivalent: accept the real banner, let the real SDK write
+`axeptio_cookies`, reload, and confirm the template replayed it as an early consent
+update. Everywhere else the template is fed a cookie this repository wrote.
 
 A defect that reaches production has, by definition, escaped all five. When that
 happens, add the check to the cheapest layer that could have caught it.
@@ -116,6 +119,17 @@ The trigger paths are a contract with `e2e/fixtures/`:
 Renaming a fixture silently stops its tag firing, and the symptom is an absent banner
 rather than a 404. The two conditions must stay mutually exclusive: when both tags
 fired from one trigger, two competing CMPs loaded on the same page.
+
+Two settings the live suite depends on and the repository cannot see:
+
+- **The Brands tag has Consent Mode enabled.** The whole consent block in `template.tpl`
+  is gated on `isComoEnabled`, so with it off the early-consent replay never runs and the
+  round-trip test fails at the last assertion. A consequence worth stating: the
+  Consent-Mode-*off* path therefore has no live coverage, only unit and hermetic.
+- **The Axeptio project has Google Consent Mode enabled**, which is what makes the SDK
+  write `$$googleConsentMode` into `axeptio_cookies`. That is Axeptio-side configuration,
+  not GTM's. The round-trip test asserts on the key directly, so losing the setting
+  surfaces here rather than silently in production.
 
 The service account needs **Publish** on the container, not Edit — creating a version
 needs Approve and publishing needs Publish, so Edit fails halfway through the first
