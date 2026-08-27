@@ -51,7 +51,7 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | User cookies duration (in days) | `180` | How long the visitor's choices are remembered. |
 | User cookies domain | — | Set to a parent domain to share one consent across subdomains. |
 | User cookies secure | on | Restricts the consent cookie to HTTPS. |
-| Consent cookie metadata prefix | `$$` | The prefix the SDK stores its bookkeeping keys under. Change it only if your project sets `metadataPrefix` — otherwise the tag reads the visitor's stored choices under the wrong keys. |
+| Consent cookie metadata prefix | `$$` | The prefix the SDK stores its bookkeeping keys under. Change it only if your project sets `metadataPrefix` — otherwise the tag reads the visitor's stored choices under the wrong keys. This field is passed to the SDK and wins over a `metadataPrefix` row in Additional Settings; a row on its own is honoured for both. |
 | dataLayer Name | — | Set only if your container uses a non-default dataLayer name. |
 | Trigger GTM Events | on | Whether Axeptio pushes its events to the dataLayer. *Update Only* fires just `axeptio_update`. |
 
