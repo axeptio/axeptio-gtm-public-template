@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.2.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.6...v2.2.0) (2026-08-27)
+
+
+### Features
+
+* **template:** support all seven consent types and a configurable wait_for_update ([5fdaecf](https://github.com/axeptio/axeptio-gtm-public-template/commit/5fdaecf5615c84395db42cf7ac58f951c566cbe3))
+
+
+### Bug Fixes
+
+* **template:** accept http and GTM variables in the Server-side URL ([d9d1d3c](https://github.com/axeptio/axeptio-gtm-public-template/commit/d9d1d3c92ddd64542b1679900e49c85b399bb023))
+* **template:** close the remaining silent paths in the consent replay and defaults ([fb227ce](https://github.com/axeptio/axeptio-gtm-public-template/commit/fb227ceb18204133e766e4dab66678bc7377c021))
+* **template:** close the silent-failure paths found by the adversarial review ([d85e465](https://github.com/axeptio/axeptio-gtm-public-template/commit/d85e46586d47e677cf66c2ce0b6cf1d8cafe96bb))
+* **template:** coerce Additional Settings values to their SDK types ([d3bdc6e](https://github.com/axeptio/axeptio-gtm-public-template/commit/d3bdc6ee27627731f5d4620de115e3d321e00bc9))
+* **template:** enable Consent Mode by default and deny when no default rows are set ([3458dee](https://github.com/axeptio/axeptio-gtm-public-template/commit/3458dee861765184e647fff580ba9985f940c468))
+* **template:** honour the consent cookie metadata prefix and explain skipped replays ([09186fd](https://github.com/axeptio/axeptio-gtm-public-template/commit/09186fd5e9f64093ab9f79bc8a26f9f40b5bd128))
+* **template:** iterate default rows by index so an array-like table cannot abort the tag ([fede9ef](https://github.com/axeptio/axeptio-gtm-public-template/commit/fede9ef31bf69bbc5a5c7a375d7013cdcef7ef4c))
+* **template:** leave the Consent Mode checkbox default as it was ([40cc451](https://github.com/axeptio/axeptio-gtm-public-template/commit/40cc45104a523ba9fd5df9d426827ed04878b93e))
+* **template:** resolve one metadata prefix for both the cookie read and the SDK ([7371d93](https://github.com/axeptio/axeptio-gtm-public-template/commit/7371d93701dd6e42fa13bf6d5d9153437c3e1b0d))
+* **template:** treat a non-text Region as every region instead of aborting ([141b7fc](https://github.com/axeptio/axeptio-gtm-public-template/commit/141b7fc9975aa0b5aa6a4e6e2998146dded670ce))
+
 ## [2.1.6](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.5...v2.1.6) (2026-08-27)
 
 
