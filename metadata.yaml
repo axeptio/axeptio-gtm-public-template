@@ -22,11 +22,24 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: 7eeaf70236e834f65d95e98aa4592931407488c9
+    changeNotes: |-
+      - **template:** support all seven consent types and a configurable wait_for_update
+      - **template:** accept http and GTM variables in the Server-side URL
+      - **template:** close the remaining silent paths in the consent replay and defaults
+      - **template:** close the silent-failure paths found by the adversarial review
+      - **template:** coerce Additional Settings values to their SDK types
+      - **template:** enable Consent Mode by default and deny when no default rows are set
+      - **template:** honour the consent cookie metadata prefix and explain skipped replays
+      - **template:** iterate default rows by index so an array-like table cannot abort the tag
+      - **template:** leave the Consent Mode checkbox default as it was
+      - **template:** resolve one metadata prefix for both the cookie read and the SDK
+      - **template:** treat a non-text Region as every region instead of aborting
+  # Older versions
   - sha: 4813bca0c82d09a7ec1dc05dcca0fc563fa3e29c
     changeNotes: |-
       - **ci:** harden the two paths Copilot flagged on the sync
       - **ci:** stop the GTM sync republishing on every run
-  # Older versions
   - sha: 55809818376265b3ba81e7bad7497f5a6d6da555
     changeNotes: |-
       - **template:** keep the JSON blocks in GTM's canonical escaping
