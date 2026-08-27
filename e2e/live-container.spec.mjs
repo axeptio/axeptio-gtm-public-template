@@ -135,14 +135,23 @@ async function gtagConsentCalls(page, command) {
 // Counting calls means counting a number that only ever goes up, so there is no
 // event to wait for — and waiting for the entry itself would beg the question the
 // count is asking. Wait for the dataLayer to stop growing instead: two identical
-// lengths a quiet window apart, or the timeout, whichever lands first.
+// lengths a quiet window apart. Only that returns.
+//
+// Running out of time while the length is still moving throws rather than returning
+// what it has. A count taken mid-flight is not a small measurement error, it is the
+// wrong answer in the direction that hides the defect: the Publishers assertion is
+// `toBe(0)`, so an under-count is exactly what makes it pass for the wrong reason
+// and turns a test.fail into a silent unexpected pass.
 async function waitForDataLayerToSettle(page, quietMs = 2_000, timeout = BOOT_TIMEOUT) {
   const deadline = Date.now() + timeout;
   let previous = -1;
   for (;;) {
     await page.waitForTimeout(quietMs);
     const length = await page.evaluate(() => (window.dataLayer || []).length);
-    if (length === previous || Date.now() > deadline) return length;
+    if (length === previous) return length;
+    if (Date.now() > deadline) {
+      throw new Error(`dataLayer did not settle within ${timeout} ms: ${previous} -> ${length}`);
+    }
     previous = length;
   }
 }
