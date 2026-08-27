@@ -137,6 +137,10 @@ async function gtagConsentCalls(page, command) {
 // count is asking. Wait for the dataLayer to stop growing instead: two identical
 // lengths a quiet window apart. Only that returns.
 //
+// The first sample is taken immediately, so an already-stable dataLayer costs one
+// quiet window rather than two. Every caller waits this at least once and the live
+// suite is the slowest layer there is, so the difference is worth the extra line.
+//
 // Running out of time while the length is still moving throws rather than returning
 // what it has. A count taken mid-flight is not a small measurement error, it is the
 // wrong answer in the direction that hides the defect: the Publishers assertion is
@@ -144,10 +148,12 @@ async function gtagConsentCalls(page, command) {
 // and turns a test.fail into a silent unexpected pass.
 async function waitForDataLayerToSettle(page, quietMs = 2_000, timeout = BOOT_TIMEOUT) {
   const deadline = Date.now() + timeout;
-  let previous = -1;
+  const sample = () => page.evaluate(() => (window.dataLayer || []).length);
+
+  let previous = await sample();
   for (;;) {
     await page.waitForTimeout(quietMs);
-    const length = await page.evaluate(() => (window.dataLayer || []).length);
+    const length = await sample();
     if (length === previous) return length;
     if (Date.now() > deadline) {
       throw new Error(`dataLayer did not settle within ${timeout} ms: ${previous} -> ${length}`);
