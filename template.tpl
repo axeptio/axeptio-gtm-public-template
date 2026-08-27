@@ -555,7 +555,18 @@ if (metadataPrefixField !== '$$') {
 
 if(data.isComoEnabled){
   
+  // The Region column is TEXT, but TEXT accepts a GTM variable, and a lookup that
+  // misfires can hand over a number or an object. Calling split on that throws
+  // before injectScript — no default, no SDK, a green tag and no banner. So anything
+  // that is not text counts as "every region", the same as a blank cell, and says so
+  // in Preview rather than failing in the one way nobody would notice.
   const splitInput = (input) => {
+  if (typeof input !== 'string') {
+    if (input !== undefined && input !== null) {
+      logToConsole('Axeptio GTM tag: Region is not text; the row applies to every region');
+    }
+    return [];
+  }
   return input.split(',')
       .map(entry => entry.trim())
       .filter(entry => entry.length !== 0);
@@ -1824,6 +1835,23 @@ scenarios:
     assertThat(applied.region).isEqualTo(['FR', 'DE']);
     assertThat(applied.ad_storage).isEqualTo('denied');
     assertThat(applied.wait_for_update).isEqualTo(500);
+- name: A non text Region applies everywhere instead of aborting the tag
+  code: |-
+    // A GTM variable in the Region cell can resolve to a number; split() on it
+    // used to throw before injectScript, so the visitor got no CMP at all.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{region: 42, ad_storage: 'denied'}]
+    });
+
+    assertThat(applied.region).isUndefined();
+    assertThat(applied.ad_storage).isEqualTo('denied');
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+    assertApi('gtmOnFailure').wasNotCalled();
 - name: The Google developer ID is declared
   code: |-
     runCode({isComoEnabled: true, defaultSettings: []});
