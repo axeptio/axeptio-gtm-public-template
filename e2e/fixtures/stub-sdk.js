@@ -17,6 +17,12 @@
   window.__axeptioStub = {
     // A structured clone would drop functions; the settings object is plain data.
     bootedWith: window.axeptioSettings ? JSON.parse(JSON.stringify(window.axeptioSettings)) : null,
+    // The key names, taken from the live object rather than from the copy above:
+    // JSON.stringify omits keys whose value is undefined, so the serialised copy
+    // cannot tell an absent proxyBaseUrl from one that is present and set to
+    // nothing. To the SDK those two are not the same thing, and only this list
+    // keeps them apart.
+    bootedKeys: window.axeptioSettings ? Object.keys(window.axeptioSettings) : null,
     // The URL the template actually asked for, before the hermetic rewrite.
     requestedUrl: params.get('real'),
     bootedAt: window.performance.now(),
