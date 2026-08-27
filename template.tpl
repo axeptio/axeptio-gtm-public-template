@@ -508,6 +508,72 @@ if (consentUpdateAlreadySent) {
   axeptioSettings.consentUpdateAlreadySent = true;
 }
 
+// Every "Additional Axeptio Settings" row arrives here as a STRING: the table is
+// a SIMPLE_TABLE and its value column is TEXT, so GTM has no way to send anything
+// else for a typed-in value. The SDK does not coerce what it is handed —
+// widget-client reads options as Boolean(this.settings.compressUserCookie), and
+// Boolean('false') is true — so a row spelling out `compressUserCookie = false`
+// used to switch the option ON, the exact opposite of what was configured. The
+// same string-only column made numeric options (userCookiesDuration) arrive as
+// text and left object/array options (userCrossCookiesDomain, googleConsentMode)
+// impossible to express at all.
+//
+// So coerce here, at the boundary where the string-only table meets the typed
+// settings object. Only strings are touched: the column also accepts a GTM
+// variable, which can already resolve to a real boolean, number, object or array,
+// and those must reach the SDK exactly as the variable produced them.
+//
+// The numeric test is deliberately stricter than makeNumber(). Number('') is 0
+// and Number('1e5') is 100000, and Axeptio ids like '5fbfa806a0787d3985c6ee5f'
+// are hex — turning any of those into a number would corrupt a perfectly valid
+// setting. Only plain decimal literals qualify, checked character by character
+// because the GTM sandbox has no RegExp.
+const isNumericString = (value) => {
+  let index = (value.charAt(0) === '-') ? 1 : 0;
+  let digits = 0;
+  let dots = 0;
+  for (; index < value.length; index += 1) {
+    const character = value.charAt(index);
+    if (character >= '0' && character <= '9') {
+      digits += 1;
+    } else if (character === '.') {
+      dots += 1;
+      if (dots > 1) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+  return digits > 0;
+};
+
+const coerceSettingValue = (value) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const trimmed = value.trim();
+  // Lowercase only: 'True' is not something GTM produces for a boolean, so
+  // treating it as one would be guessing at a value the publisher typed by hand.
+  if (trimmed === 'true') {
+    return true;
+  }
+  if (trimmed === 'false') {
+    return false;
+  }
+  if (isNumericString(trimmed)) {
+    return makeNumber(trimmed);
+  }
+  const first = trimmed.charAt(0);
+  if (first === '{' || first === '[') {
+    // The sandboxed JSON.parse returns undefined rather than throwing, so a
+    // half-written object keeps its original string instead of becoming undefined.
+    const parsed = JSON.parse(trimmed);
+    return (parsed === undefined) ? value : parsed;
+  }
+  return value;
+};
+
 const additionalSettings = data.axeptioAdditionalSettings || data.additionalSettings;
 if (additionalSettings && typeof additionalSettings.length === 'number') {
   for (let index = 0; index < additionalSettings.length; index += 1) {
@@ -519,7 +585,7 @@ if (additionalSettings && typeof additionalSettings.length === 'number') {
     if (!key) {
       continue;
     }
-    axeptioSettings[key] = entry.value;
+    axeptioSettings[key] = coerceSettingValue(entry.value);
   }
 }
 setInWindow('axeptioSettings', axeptioSettings, true);
@@ -1178,11 +1244,190 @@ scenarios:
     runCode({
       axeptioAdditionalSettings: [
         {key: 'jsonCookieName', value: 'my_cookies'},
-        {key: '', value: 'dropped'}
+        {key: '  mountElementId  ', value: 'axeptio-widget'},
+        {key: '', value: 'dropped'},
+        {key: '   ', value: 'dropped too'}
       ]
     });
 
     assertThat(settings.jsonCookieName).isEqualTo('my_cookies');
+    assertThat(settings.mountElementId).isEqualTo('axeptio-widget');
+- name: An additional setting spelling false becomes the boolean false
+  code: |-
+    // The bug this guards: the SDK reads options as Boolean(settings.x), and
+    // Boolean('false') is true, so the string turned the option ON.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'compressUserCookie', value: 'false'},
+        {key: 'useDocumentLang', value: ' false '}
+      ]
+    });
+
+    assertThat(settings.compressUserCookie).isFalse();
+    assertThat(settings.useDocumentLang).isFalse();
+- name: An additional setting spelling true becomes the boolean true
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'userCookiesSecure', value: 'true'}
+      ]
+    });
+
+    assertThat(settings.userCookiesSecure).isTrue();
+- name: A numeric additional setting becomes a number
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'userCookiesDuration', value: '180'}
+      ]
+    });
+
+    assertThat(settings.userCookiesDuration).isNumber();
+    assertThat(settings.userCookiesDuration).isEqualTo(180);
+- name: A negative decimal additional setting becomes a number
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'widgetOffset', value: '-1.5'}
+      ]
+    });
+
+    assertThat(settings.widgetOffset).isNumber();
+    assertThat(settings.widgetOffset).isEqualTo(-1.5);
+- name: A hex identifier additional setting stays a string
+  code: |-
+    // Axeptio ids are hex, so an id starting with digits must never be numified.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'token', value: '5fbfa806a0787d3985c6ee5f'}
+      ]
+    });
+
+    assertThat(settings.token).isString();
+    assertThat(settings.token).isEqualTo('5fbfa806a0787d3985c6ee5f');
+- name: Number like additional settings that are not plain decimals stay strings
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'exponent', value: '1e5'},
+        {key: 'version', value: '1.2.3'},
+        {key: 'dash', value: '-'}
+      ]
+    });
+
+    assertThat(settings.exponent).isEqualTo('1e5');
+    assertThat(settings.version).isEqualTo('1.2.3');
+    assertThat(settings.dash).isEqualTo('-');
+- name: Plain string additional settings survive untouched
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'cookiesScope', value: 'page'},
+        {key: 'storageScope', value: 'session'},
+        {key: 'userCrossCookiesDomain', value: '.example.com'},
+        {key: 'emptyOption', value: ''}
+      ]
+    });
+
+    assertThat(settings.cookiesScope).isEqualTo('page');
+    assertThat(settings.storageScope).isEqualTo('session');
+    assertThat(settings.userCrossCookiesDomain).isEqualTo('.example.com');
+    assertThat(settings.emptyOption).isEqualTo('');
+- name: A capitalised True additional setting stays a string
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'useDocumentLang', value: 'True'}
+      ]
+    });
+
+    assertThat(settings.useDocumentLang).isString();
+    assertThat(settings.useDocumentLang).isEqualTo('True');
+- name: A JSON object additional setting is parsed
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'googleConsentMode', value: '{"a":1}'}
+      ]
+    });
+
+    assertThat(settings.googleConsentMode).isObject();
+    assertThat(settings.googleConsentMode.a).isEqualTo(1);
+- name: A JSON array additional setting is parsed
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'userCrossCookiesDomain', value: '["x"]'}
+      ]
+    });
+
+    assertThat(settings.userCrossCookiesDomain).isArray();
+    assertThat(settings.userCrossCookiesDomain).isEqualTo(['x']);
+- name: Malformed JSON in an additional setting stays a string
+  code: |-
+    // The sandboxed JSON.parse returns undefined instead of throwing, so the
+    // original string has to be kept rather than written through as undefined.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'googleConsentMode', value: '{not json'}
+      ]
+    });
+
+    assertThat(settings.googleConsentMode).isString();
+    assertThat(settings.googleConsentMode).isEqualTo('{not json');
+- name: A non string additional setting is passed through unchanged
+  code: |-
+    // The value column accepts a GTM variable, which can resolve to a real
+    // boolean, number, object or array. Those are already the right type.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      axeptioAdditionalSettings: [
+        {key: 'compressUserCookie', value: true},
+        {key: 'userCookiesDuration', value: 365},
+        {key: 'googleConsentMode', value: {analytics_storage: 'denied'}},
+        {key: 'authorizedVendors', value: ['google']}
+      ]
+    });
+
+    assertThat(settings.compressUserCookie).isTrue();
+    assertThat(settings.userCookiesDuration).isEqualTo(365);
+    assertThat(settings.googleConsentMode).isEqualTo({analytics_storage: 'denied'});
+    assertThat(settings.authorizedVendors).isEqualTo(['google']);
 - name: Cookie settings are passed through to axeptioSettings
   code: |-
     let settings;
