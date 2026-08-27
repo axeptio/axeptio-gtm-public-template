@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.1.6](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.5...v2.1.6) (2026-08-27)
+
+
+### Bug Fixes
+
+* **ci:** harden the two paths Copilot flagged on the sync ([bcc02f2](https://github.com/axeptio/axeptio-gtm-public-template/commit/bcc02f251bbd048dee180b2c82b5c140d2d3ae29))
+* **ci:** stop the GTM sync republishing on every run ([cf22c43](https://github.com/axeptio/axeptio-gtm-public-template/commit/cf22c43ae7497069f3326adb0a76a863436f2dd5))
+* **ci:** stop the GTM sync republishing on every run ([f5d46cb](https://github.com/axeptio/axeptio-gtm-public-template/commit/f5d46cb125a6edf5517e95507e206746a42d0d9b))
+
 ## [2.1.5](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.4...v2.1.5) (2026-08-20)
 
 
