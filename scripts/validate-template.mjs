@@ -279,6 +279,20 @@ export function validateTemplate(tplPath = TPL_PATH) {
     }
   }
 
+  // --- 9. No hex numeric literals in the sandboxed JS. -------------------------
+  // Node's vm (npm test) accepts 0xA0; GTM's parser does not ("missing ';' at
+  // 'xA0'", PR #104), so the mistake only surfaces in the compile check — which
+  // never gates. String literals go first (a URL such as 'https://…' would
+  // otherwise read as a line comment and hide the rest of that line), then block
+  // and line comments, so prose may still mention hex.
+  const codeOnly = sandboxSource
+    .replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  for (const literal of uniqueMatches(codeOnly, /\b(0[xX][0-9a-fA-F]+)\b/g, 1)) {
+    fail(`sandboxed JS uses the hex literal ${literal}; GTM's parser rejects hex literals — write it in decimal`);
+  }
+
   return violations;
 }
 
