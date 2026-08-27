@@ -700,8 +700,17 @@ const main = (data) => {
   // granted - the opposite of what the publisher is configuring row by row. That
   // may well be deliberate for a site whose audience is only in those regions, so
   // this changes nothing and only names it in Preview.
+  //
+  // Iterated by index rather than forEach: the check above accepts anything
+  // array-like, and an array-like from a hand-edited import has a length but not
+  // necessarily a forEach — calling it would throw before injectScript, the very
+  // path this block exists to close. Rows that are not objects are skipped.
   let regionlessRowSeen = false;
-  defaultRows.forEach(settings => {
+  for (let rowIndex = 0; rowIndex < defaultRows.length; rowIndex += 1) {
+    const settings = defaultRows[rowIndex];
+    if (!settings || typeof settings !== 'object') {
+      continue;
+    }
     const defaultData = parseCommandData(settings);
     if (defaultData.region === undefined) {
       regionlessRowSeen = true;
@@ -709,7 +718,7 @@ const main = (data) => {
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
     defaultData.wait_for_update = waitForUpdate;
     setDefaultConsentState(defaultData);
-  });
+  }
   if (defaultRows.length > 0 && !regionlessRowSeen) {
     logToConsole('Axeptio GTM tag: no region-less default row; visitors outside the listed regions get Google\'s default of granted');
   }
@@ -2386,6 +2395,22 @@ scenarios:
 
     assertThat(applied).isEqualTo({ad_storage: 'denied', wait_for_update: 500});
     assertApi('injectScript').wasCalled();
+- name: An array-like default table without forEach is still applied
+  code: |-
+    // A hand-edited import can yield {0: row, length: 1}: array-like, no forEach.
+    // Calling forEach on it threw before injectScript.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: {0: {region: '', ad_storage: 'denied'}, length: 1}
+    });
+
+    assertThat(applied.ad_storage).isEqualTo('denied');
+    assertThat(applied.region).isUndefined();
+    assertApi('injectScript').wasCalled();
+    assertApi('gtmOnFailure').wasNotCalled();
 - name: A malformed default settings value behaves as an empty table
   code: |-
     // Not a list at all, which a hand-edited or badly imported container can
