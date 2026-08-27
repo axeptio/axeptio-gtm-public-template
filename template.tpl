@@ -115,6 +115,24 @@ ___TEMPLATE_PARAMETERS___
       },
       {
         "type": "TEXT",
+        "name": "metadataPrefix",
+        "displayName": "Consent cookie metadata prefix",
+        "simpleValueType": true,
+        "defaultValue": "$$",
+        "valueValidators": [
+          {
+            "type": "REGEX",
+            "args": [
+              "^[A-Za-z0-9_$]{1,8}$"
+            ],
+            "enablingConditions": [],
+            "errorMessage": "1 to 8 letters, digits, underscore or $"
+          }
+        ],
+        "help": "Only change this if your Axeptio project sets metadataPrefix in axeptioSettings. The tag reads the visitor\u0027s stored choices under this prefix and passes it to the SDK so both sides agree."
+      },
+      {
+        "type": "TEXT",
         "name": "dataLayerName",
         "displayName": "dataLayer Name",
         "simpleValueType": true,
@@ -372,6 +390,15 @@ const decodeUriComponent = require('decodeUriComponent');
 
 let consentUpdateAlreadySent = false;
 
+// An Axeptio project can rename the prefix the SDK writes its bookkeeping keys
+// under (axeptioSettings.metadataPrefix), so '$$completed' becomes e.g.
+// 'ax_completed'. Hardcoding '$$' made the early replay find nothing on those
+// projects and say nothing about it. Resolved once, here, because it is needed
+// on both sides: to read the cookie below, and to tell the SDK which prefix this
+// tag assumed. Falls back to '$$' — the SDK's own default — for a tag saved
+// before this field existed, which sends no value at all.
+const metadataPrefix = (typeof data.metadataPrefix === 'string' && data.metadataPrefix.trim() !== '') ? data.metadataPrefix.trim() : '$$';
+
 if(data.isComoEnabled){
   
   const splitInput = (input) => {
@@ -444,8 +471,8 @@ const main = (data) => {
   // Both guards below fail safe: skipping only forgoes the head start, the SDK
   // still applies the visitor's real choices once it boots.
   //
-  // Guard 1 - product. Only the Brands SDK writes $$googleConsentMode into the
-  // cookie; the TCF build calls gtag('consent', 'update') directly and its
+  // Guard 1 - product. Only the Brands SDK writes the googleConsentMode key into
+  // the cookie; the TCF build calls gtag('consent', 'update') directly and its
   // payload has no such key. So on a Publishers tag that key can only have come
   // from a different project. This is the guard that does the work, because
   // Cookies Version is optional and most tags leave it empty.
@@ -454,12 +481,25 @@ const main = (data) => {
   // Same class of assumption as the classic-script coupling documented below.
   //
   // Guard 2 - configuration. The cookie carries no project id, so the only
-  // discriminator left is $$cookiesVersion.name, which both SDKs write and
-  // which is the value this tag collects as data.cookiesVersion. Compared only
-  // when BOTH sides are non-empty: a strict match would disable early consent
-  // for every tag that leaves the field blank, which is the default.
+  // discriminator left is the cookiesVersion key's .name, which both SDKs write
+  // and which is the value this tag collects as data.cookiesVersion. Compared
+  // only when BOTH sides are non-empty: a strict match would disable early
+  // consent for every tag that leaves the field blank, which is the default.
   // Residual gap: two Brands projects where either tag leaves it blank are
   // still indistinguishable.
+  //
+  // All three keys are built from metadataPrefix, because the project - not this
+  // template - decides what they are called.
+  const completedKey = metadataPrefix + 'completed';
+  const googleConsentModeKey = metadataPrefix + 'googleConsentMode';
+  const cookiesVersionKey = metadataPrefix + 'cookiesVersion';
+
+  // A skipped replay used to be entirely silent, which made the two ways it
+  // fails on a real site - a compressed cookie, and a cookie written under a
+  // different prefix - indistinguishable from "this visitor has not consented
+  // yet". logToConsole only reaches a debug environment, so the reasons below
+  // appear in Preview and never in production. Every branch still falls through
+  // to the SDK injection: these lines diagnose, they never change the outcome.
   const cookieValues = (data.product === 'publishers') ? undefined : getCookieValues('axeptio_cookies');
   if (cookieValues && cookieValues.length > 0) {
     const raw = cookieValues[0];
@@ -468,14 +508,41 @@ const main = (data) => {
       const decoded = decodeUriComponent(raw);
       parsed = (decoded !== undefined) ? JSON.parse(decoded) : null;
     }
-    const cookieConfig = (parsed && typeof parsed['$$cookiesVersion'] === 'object') ? parsed['$$cookiesVersion'] : null;
+    const readable = !!parsed && typeof parsed === 'object';
+    const cookieConfig = (readable && typeof parsed[cookiesVersionKey] === 'object') ? parsed[cookiesVersionKey] : null;
     const cookieVersionName = cookieConfig ? cookieConfig.name : undefined;
     const configMismatch = !!data.cookiesVersion && !!cookieVersionName && cookieVersionName !== data.cookiesVersion;
-    if (configMismatch) {
+    if (!readable) {
+      // The Brands SDK lz-string-compresses the cookie when compressUserCookie is
+      // on - always when it is 'forced', otherwise once the payload passes ~3 KB
+      // encoded. The result is not JSON and the sandbox has no decompressor, so
+      // the replay genuinely cannot happen here; the publisher should at least
+      // hear why instead of wondering where the head start went.
+      logToConsole('Axeptio GTM tag: consent cookie present but not readable (compressed by compressUserCookie, or corrupted); early consent skipped');
+    } else if (configMismatch) {
       logToConsole('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "' + cookieVersionName + '"');
-    }
-    if (!configMismatch && parsed && parsed['$$completed'] && parsed['$$googleConsentMode'] && typeof parsed['$$googleConsentMode'] === 'object') {
-      const gcm = parsed['$$googleConsentMode'];
+    } else if (!parsed[completedKey]) {
+      // Absent, not false: a visitor part-way through the banner has completed
+      // false and that is normal, so it stays quiet. Absent, while some other key
+      // ends in 'completed', means the cookie is fine and this tag is reading the
+      // wrong prefix - a configuration mistake worth naming. Plain for-in and
+      // indexOf because the sandbox has no RegExp.
+      if (parsed[completedKey] === undefined) {
+        let otherPrefixSeen = false;
+        for (const cookieKey in parsed) {
+          if (cookieKey !== completedKey && cookieKey.length >= 9 &&
+              cookieKey.indexOf('completed') === cookieKey.length - 9) {
+            otherPrefixSeen = true;
+          }
+        }
+        if (otherPrefixSeen) {
+          logToConsole('Axeptio GTM tag: consent cookie uses a different metadata prefix; set Consent cookie metadata prefix to match; early consent skipped');
+        }
+      }
+    } else if (!parsed[googleConsentModeKey] || typeof parsed[googleConsentModeKey] !== 'object') {
+      logToConsole('Axeptio GTM tag: consent cookie has no Google Consent Mode block (Consent Mode is off in the Axeptio project, or the consent predates it); early consent skipped');
+    } else {
+      const gcm = parsed[googleConsentModeKey];
       const consentModeStates = {};
       // Only the consent types granted write access in the web permissions block
       // (access_consent). updateConsentState requires write access for *every*
@@ -519,6 +586,14 @@ const axeptioSettings = {
 
 if (consentUpdateAlreadySent) {
   axeptioSettings.consentUpdateAlreadySent = true;
+}
+
+// Sent only when it differs from the SDK's own default, so a tag that never
+// touched the field - and every tag saved before the field existed - hands the
+// SDK exactly the settings object it handed before. When it is set, both sides
+// agree on the prefix instead of the project quietly deciding on its own.
+if (metadataPrefix !== '$$') {
+  axeptioSettings.metadataPrefix = metadataPrefix;
 }
 
 // Every "Additional Axeptio Settings" row arrives here as a STRING: the table is
@@ -1224,6 +1299,94 @@ scenarios:
     runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: 'my-project-base'});
 
     assertThat(states).isEqualTo({ad_storage: 'granted'});
+- name: A custom metadata prefix replays consent
+  code: |-
+    const cookie = JSON.stringify({
+      'ax_completed': true,
+      'ax_googleConsentMode': {ad_storage: 'granted', analytics_storage: 'denied'}
+    });
+    let states;
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], metadataPrefix: 'ax_'});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted', analytics_storage: 'denied'});
+    assertThat(settings.metadataPrefix).isEqualTo('ax_');
+- name: The default prefix is not forwarded to the SDK
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], metadataPrefix: '$$'});
+
+    assertThat(settings.metadataPrefix).isUndefined();
+- name: An unset metadata prefix is not forwarded to the SDK
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertThat(settings.metadataPrefix).isUndefined();
+- name: A cookie under another prefix is skipped with a reason
+  code: |-
+    const cookie = JSON.stringify({
+      'ax_completed': true,
+      'ax_googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+- name: A compressed cookie is skipped with a reason
+  code: |-
+    mock('getCookieValues', () => ['NoYQwgLgpgxg1g9gWzMArgZwC4EsB2eIA0CAJgIYDmBhAdAEZ7YAWA9gO4CeA']);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+- name: A completed cookie without a Consent Mode block is skipped with a reason
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'my-project-base', identifier: 'bbbbbbbbbbbbbbbbbbbbbbbb'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalled();
+    assertApi('injectScript').wasCalled();
+- name: No cookie logs nothing
+  code: |-
+    mock('getCookieValues', () => []);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasNotCalled();
+    assertApi('injectScript').wasCalled();
+- name: A consent cookie mid journey stays quiet
+  code: |-
+    const cookie = JSON.stringify({
+      '$$completed': false,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({isComoEnabled: true, defaultSettings: []});
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasNotCalled();
 - name: Consent Mode off skips the consent APIs entirely
   code: |-
     runCode({});

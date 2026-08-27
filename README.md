@@ -51,6 +51,7 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | User cookies duration (in days) | `180` | How long the visitor's choices are remembered. |
 | User cookies domain | — | Set to a parent domain to share one consent across subdomains. |
 | User cookies secure | on | Restricts the consent cookie to HTTPS. |
+| Consent cookie metadata prefix | `$$` | The prefix the SDK stores its bookkeeping keys under. Change it only if your project sets `metadataPrefix` — otherwise the tag reads the visitor's stored choices under the wrong keys. |
 | dataLayer Name | — | Set only if your container uses a non-default dataLayer name. |
 | Trigger GTM Events | on | Whether Axeptio pushes its events to the dataLayer. *Update Only* fires just `axeptio_update`. |
 
@@ -74,6 +75,10 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | Default Settings | Per-region defaults for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`. Leaving the table empty denies all four types in every region — it does not mean "no default". |
 | Redact Ads Data | Stops advertising cookies being set while `ad_storage` is denied. |
 | Pass through URL parameters | Preserves ad click information across pages when cookies are denied. |
+
+When a returning visitor's stored consent cannot be replayed before the SDK loads, the tag
+logs the reason in GTM Preview — a compressed cookie (`compressUserCookie`), a cookie written
+under another metadata prefix, or a cookie with no Consent Mode block.
 
 </details>
 
