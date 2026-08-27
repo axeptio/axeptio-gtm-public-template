@@ -61,7 +61,7 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 
 | Field | What it does |
 | --- | --- |
-| Server-side URL | Your server-side container URL, for forwarding consent. Pair with the [sGTM template](#related-templates). |
+| Server-side URL | Your server-side container URL, for forwarding consent. Pair with the [sGTM template](#related-templates). Accepts a GTM variable. |
 
 </details>
 

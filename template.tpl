@@ -160,10 +160,10 @@ ___TEMPLATE_PARAMETERS___
           {
             "type": "REGEX",
             "args": [
-              "^(http(s):\\/\\/.)[-a-zA-Z0-9@:%._\\+~#\u003d]{2,256}\\.[a-z]{2,10}\\b([-a-zA-Z0-9@:%_\\+.~#?\u0026//\u003d]*)$"
+              "^(https?:\\/\\/[^\\s]+|\\{\\{.+\\}\\})$"
             ],
             "enablingConditions": [],
-            "errorMessage": "Invalid URL"
+            "errorMessage": "Must be an http(s) URL or a GTM variable"
           }
         ],
         "help": "Your server-side container\u0027s URL"
