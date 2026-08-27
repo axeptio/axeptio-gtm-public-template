@@ -199,7 +199,6 @@ ___TEMPLATE_PARAMETERS___
         "name": "isComoEnabled",
         "checkboxText": "Activate Google Consent Mode v2",
         "simpleValueType": true,
-        "defaultValue": true,
         "help": "Sets Google Consent Mode defaults before your other tags and replays a returning visitor\u0027s stored choice. Trigger this tag on Consent Initialization - All Pages."
       },
       {
