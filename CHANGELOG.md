@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.5.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.4.0...v2.5.0) (2026-08-28)
+
+
+### Features
+
+* **template:** pick the project and product per visitor country from a table ([8aed93d](https://github.com/axeptio/axeptio-gtm-public-template/commit/8aed93de007b91b679aabde85efce9fcc281b10f))
+* **template:** pick the project and product per visitor country from a table ([85fc63f](https://github.com/axeptio/axeptio-gtm-public-template/commit/85fc63f3e6a1851bd6d9d5a1a5a40f0751e66451))
+
 ## [2.4.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.3.0...v2.4.0) (2026-08-28)
 
 
