@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.2.0...v2.3.0) (2026-08-28)
+
+
+### Features
+
+* **template:** route the SDK through a first-party proxy base URL ([c2b48ea](https://github.com/axeptio/axeptio-gtm-public-template/commit/c2b48ea94ad41534a9dbd9b02a419413fd5137ed))
+* **template:** route the SDK through a first-party proxy base URL ([1150476](https://github.com/axeptio/axeptio-gtm-public-template/commit/1150476f7ee1cbc1c0328a81ddefa108eafa5daa))
+
 ## [2.2.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.1.6...v2.2.0) (2026-08-27)
 
 
