@@ -142,12 +142,15 @@ between regions, so pinning a flow would make the suite fail on a change of
 datacentre and say nothing about the template. What the test asserts instead is the
 *relationship* between the answer and the outcome, which holds wherever the runner
 sits: the service was asked, exactly one `static.axept.io` bundle loaded, and the
-answer's own HTTP status — read off the `PerformanceResourceTiming` entry, the only
-part of a cross-origin response a page can see — says which outcome is required. A
-`200` must produce a `flowType` of `tcf` or `brands` and the matching bundle; a `404`
-must produce no `flowType` and the configured Brands fallback; any other status fails
-the test with the status in the message. Without the status the test could only
-accept either bundle, which is what a broken read-back also produces.
+answer itself says which outcome is required. The page cannot read that answer (a
+cross-origin script; `PerformanceResourceTiming.responseStatus` is `0` without a
+`Timing-Allow-Origin` header, which the service does not send), so the test fetches
+the same URL from the runner — same machine, same IP, same answer. A `200` must
+produce the `flowType` the body assigned (`tcf` or `brands`) on the page and the
+matching bundle; a `404` must produce no `flowType` and the configured Brands
+fallback; any other status fails the test with the status in the message. Without
+the status the test could only accept either bundle, which is what a broken
+read-back also produces.
 
 Two settings the live suite depends on and the repository cannot see:
 
