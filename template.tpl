@@ -51,7 +51,7 @@ ___TEMPLATE_PARAMETERS___
         "type": "NON_EMPTY"
       }
     ],
-    "help": "Enter your Project ID. You can find it in the settings menu of your axeptio project. A GTM variable can be selected here. To serve a different project per country, fill the Per-region projects table below rather than resolving this field from a lookup."
+    "help": "Enter your Project ID. You can find it in the settings menu of your axeptio project. A GTM variable can be selected here. To serve a different project per country, fill the Projects by region table under Regions and geolocation rather than resolving this field from a lookup."
   },
   {
     "type": "SELECT",
@@ -70,7 +70,7 @@ ___TEMPLATE_PARAMETERS___
     ],
     "simpleValueType": true,
     "defaultValue": "brands",
-    "help": "Which Axeptio product this Project ID belongs to. Brands loads the standard CMP, Publishers loads the TCF build — they are different SDKs, so this must match the project. A GTM variable can be selected here. To follow the visitor\u0027s country, fill the Per-region projects table below, which keeps the product and the Project ID together."
+    "help": "Which Axeptio product this Project ID belongs to. Brands loads the standard CMP, Publishers loads the TCF build — they are different SDKs, so this must match the project. A GTM variable can be selected here. To follow the visitor\u0027s country, fill the Projects by region table under Regions and geolocation, which keeps the product and the Project ID together, or let Axeptio resolve the flow from the visitor\u0027s location with the checkbox in that same group."
   },
   {
     "type": "TEXT",
@@ -82,9 +82,16 @@ ___TEMPLATE_PARAMETERS___
   {
     "type": "GROUP",
     "name": "regionProjectsGroup",
-    "displayName": "Per-region projects",
+    "displayName": "Regions and geolocation",
     "groupStyle": "ZIPPY_CLOSED",
     "subParams": [
+      {
+        "type": "CHECKBOX",
+        "name": "autoResolveConfig",
+        "checkboxText": "Let Axeptio pick the configuration from the visitor\u0027s location",
+        "simpleValueType": true,
+        "help": "Ask Axeptio which configuration this visitor should be shown instead of pinning one above. The tag makes one extra request to headless-api.axeptio.tech before the SDK loads; Axeptio locates the visitor and answers with the flow (Brands or Publishers) and the configuration id its own targeting rules select. It applies to whichever project the tag ends up loading - the Project ID above, or the one a per-region row below chose. The Axeptio product and Cookies Version above become the fallback: they are used unchanged when the lookup fails, answers with no flow, or is not permitted. GTM Preview names what was resolved, or why it was not. With Google Consent Mode on, the replay of a returning visitor\u0027s stored choice waits for this lookup, so raise \"Wait for update (ms)\" to 1500-2000."
+      },
       {
         "type": "TEXT",
         "name": "visitorCountry",
@@ -510,7 +517,7 @@ ___TEMPLATE_PARAMETERS___
             "type": "EQUALS"
           }
         ],
-        "help": "How long Google tags wait for the visitor\u0027s stored choice before using the defaults above. 500 ms covers the replay from the consent cookie; raise it (Usercentrics and Cookiebot use 2000) if tags fire before the banner on a first visit."
+        "help": "How long Google tags wait for the visitor\u0027s stored choice before using the defaults above. 500 ms covers the replay from the consent cookie when the tag replays it inline. With \"Let Axeptio pick the configuration from the visitor\u0027s location\" ticked the replay waits for the geolocation lookup first, so 1500-2000 is worth setting. Raise it (Usercentrics and Cookiebot use 2000) if tags fire before the banner on a first visit."
       },
       {
         "type": "CHECKBOX",
@@ -590,6 +597,12 @@ const Object = require('Object');
 const queryPermission = require('queryPermission');
 const injectScript = require('injectScript');
 const setInWindow = require('setInWindow');
+// Reads back what the geolocation script assigned onto window.axeptioSettings.
+// Covered by the access_globals grant this template already holds on that key -
+// it grants read as well as write - so no new permission is requested for it.
+// The write side stays a single setInWindow of the WHOLE object: access_globals
+// lists keys, not paths, so writing a sub-key would need a new grant.
+const copyFromWindow = require('copyFromWindow');
 const makeNumber = require('makeNumber');
 const decodeUriComponent = require('decodeUriComponent');
 
@@ -864,6 +877,9 @@ const splitRegionCodes = (value) => value.split(',')
 // checked again. An id that is not one loads no configuration and shows no banner,
 // which is the failure the old lookup-variable recipe warned about. Checked
 // character by character, the sandbox having no RegExp.
+//
+// A configuration id has the same shape, so this also guards the id the
+// geolocation service answers with at the foot of this file.
 const isProjectId = (value) => {
   if (typeof value !== 'string' || value.length !== 24) {
     return false;
@@ -909,6 +925,15 @@ const isProjectId = (value) => {
 // text is passed through untouched: only a string can be trimmed, and the SDK has
 // always received whatever the variable produced.
 const normaliseCookiesVersion = (value) => (typeof value === 'string') ? value.trim() : value;
+
+// Opt-in. With it off nothing below changes at all: the tag resolves the product
+// and the configuration from its own fields exactly as it always has, and injects
+// the SDK on the same line it always did. With it on, Axeptio is asked which
+// configuration this visitor should be shown - see the block at the foot of this
+// file - and the fields become the fallback. Read up here, before the project is
+// resolved, because the per-region narration below has to know whether the product
+// it matched is the one the tag will actually load.
+const autoResolveConfig = !!data.autoResolveConfig;
 
 let projectId = data.id;
 let product = normaliseProduct(data.product);
@@ -1027,18 +1052,30 @@ if (regionRows.length > 0) {
         cookiesVersion = rowCookiesVersion;
       }
       regionRowMatched = true;
-      logToConsole('Axeptio GTM tag: visitor country ' + country + ' matched per-region row ' +
-        (matchedIndex + 1) + '; loading project ' + projectId + ' (' + product + ')');
+      // The row's product is only worth naming when the tag is going to load it.
+      // With the resolver on the row still decides the project, but the flow is
+      // the geolocation service's to answer, and printing 'publishers' here only
+      // to print 'resolved brands' moments later reads as a contradiction rather
+      // than as two steps of one decision.
+      if (autoResolveConfig) {
+        logToConsole('Axeptio GTM tag: visitor country ' + country + ' matched per-region row ' +
+          (matchedIndex + 1) + '; loading project ' + projectId +
+          '; the geolocation service decides the flow');
+      } else {
+        logToConsole('Axeptio GTM tag: visitor country ' + country + ' matched per-region row ' +
+          (matchedIndex + 1) + '; loading project ' + projectId + ' (' + product + ')');
+      }
       reportOverlappingRows(matchedIndex, (exactIndex !== -1) ? country : countryPart);
     }
   }
 }
 
 // Blank is the not-set state for a configuration name, whether it came from the
-// field or from a row cell. Already trimmed by normaliseCookiesVersion, so a cell
-// holding nothing but spaces is as unset as an empty one.
-const cookiesVersionSet = (typeof cookiesVersion === 'string') ?
-  cookiesVersion !== '' : !!cookiesVersion;
+// field, from a row cell, or from the geolocation service. Already trimmed by
+// normaliseCookiesVersion, so a cell holding nothing but spaces is as unset as an
+// empty one. A function rather than a value because the replay can now run
+// against a configuration the tag did not know when this line was reached.
+const isCookiesVersionSet = (value) => (typeof value === 'string') ? value !== '' : !!value;
 
 // The same run-time check the rows get, for the field. A project id that is not one
 // loads no configuration and shows no banner, with nothing in Preview to say why.
@@ -1053,6 +1090,21 @@ if (!projectIdBlank && !isProjectId(projectId)) {
   logToConsole('Axeptio GTM tag: Project ID is not a 24-character id; the SDK will find no configuration');
 }
 
+
+// The early consent replay. Assigned inside the Consent Mode block below and
+// called from exactly one of two places: immediately, when the resolver is off,
+// or from the geolocation callback, when it is on. Declared out here because the
+// callback runs long after that block has closed, and left as a no-op so the
+// deferred path can call it unconditionally whether or not Consent Mode is on.
+//
+// Why the replay moves at all: it decides whether a stored consent belongs to
+// THIS project by looking at the product and the configuration the tag is
+// loading, and with the resolver on neither is known until the answer comes
+// back. Replaying a Brands cookie and then loading the TCF build is a compliance
+// failure, not a cosmetic one, so the head start waits for the answer. The
+// Consent Mode DEFAULTS are not deferred - they have to precede every other tag
+// on the page, and they do not depend on which flow wins.
+let replayEarlyConsent = () => {};
 
 if(data.isComoEnabled){
 
@@ -1086,10 +1138,16 @@ const allowedConsentTypes = ['ad_storage', 'analytics_storage', 'ad_user_data', 
   'functionality_storage', 'personalization_storage', 'security_storage'];
 
 // How long Google tags hold events waiting for the CMP's answer before falling
-// back to the defaults below. 500 ms covers the replay from the consent cookie,
-// which happens in this same tag, and stays the value every tag saved before this
-// field existed keeps using. A site whose tags fire before the banner on a first
-// visit needs longer - Usercentrics and Cookiebot ship 2000.
+// back to the defaults below. 500 ms is the value every tag saved before this
+// field existed keeps using, and it covers a replay from the consent cookie that
+// happens inline in this same tag - which is every tag with the geolocation
+// resolver off. With the resolver ON the replay waits for a network round trip to
+// headless-api.axeptio.tech first, and 500 ms need not cover that: 1500-2000 is
+// the value to set there. Unchanged rather than raised automatically, because the
+// grace period is a promise this tag makes to every OTHER tag in the container and
+// silently doubling it is not this feature's decision to take. A site whose tags
+// fire before the banner on a first visit needs longer either way - Usercentrics
+// and Cookiebot ship 2000.
 //
 // The empty-string case is checked separately because makeNumber('') is 0, which
 // would silence the grace period entirely rather than fall back; the self-
@@ -1147,7 +1205,11 @@ const parseCommandData = (settings) => {
   return commandData;
 };
 
-const main = (data) => {
+// The half of the Consent Mode work that never waits for anything: the gtagSet
+// options and the defaults. These have to precede every other tag on the page,
+// and nothing in them depends on which flow or configuration the visitor ends up
+// with, so they run at the same moment whether or not the resolver is on.
+const applyConsentDefaults = () => {
   /*
    * Optional settings using gtagSet
    */
@@ -1225,6 +1287,27 @@ const main = (data) => {
   if (defaultRows.length > 0 && !regionlessRowSeen) {
     logToConsole('Axeptio GTM tag: no region-less default row; visitors outside the listed regions get Google\'s default of granted');
   }
+};
+
+// The other half: replaying a returning visitor's stored choice, which can only
+// be judged against the product and the configuration the tag is actually going
+// to load. Both arrive as arguments rather than being read from the enclosing
+// scope, because with the resolver on they are decided after this function is
+// written and only the caller knows them.
+//
+// versionIsId says which field of the cookie the configuration has to match. The
+// tag's own Cookies Version is a configuration NAME; the geolocation service
+// answers with a configuration ID. The cookie records both, under
+// $$cookiesVersion.name and $$cookiesVersion.identifier, so comparing the wrong
+// one would never match and every replay would be skipped for a cookie that is
+// this project's.
+replayEarlyConsent = (resolvedProduct, resolvedCookiesVersion, versionIsId) => {
+  // A configuration the geolocation service chose makes this tag one of several
+  // configurations served on the domain, exactly as a per-region row does, so it
+  // takes the same strict rule: the cookie must carry that configuration, not
+  // merely fail to contradict it.
+  const strictAttribution = regionRowMatched || versionIsId;
+  const cookiesVersionSet = isCookiesVersionSet(resolvedCookiesVersion);
 
   // Early consent update from Axeptio cookie (runs before SDK loads).
   // Cookie value may be raw JSON or URL-encoded (e.g. %22 for ", %2C for ,).
@@ -1261,14 +1344,15 @@ const main = (data) => {
   // early consent for every tag that leaves the field blank, which is the
   // default.
   //
-  // Unless a per-region row matched. Then this tag is knowingly one of several
-  // projects on the domain, all writing that same cookie name, and the lenient
-  // rule becomes a leak rather than a residual gap: a Brands row behind a Brands
-  // field, neither naming a configuration, would replay project A's stored
-  // Consent Mode state under project B and log it as a success. So for that tag
-  // the rule is strict - the names must be equal - and when there is no effective
-  // Cookies Version at all the replay is skipped and said out loud, because
-  // nothing left in the payload can attribute the consent to either project.
+  // Unless a per-region row matched, or the geolocation service chose the
+  // configuration. Then this tag is knowingly one of several projects, or one of
+  // several configurations, on the domain, all writing that same cookie name, and
+  // the lenient rule becomes a leak rather than a residual gap: a Brands row
+  // behind a Brands field, neither naming a configuration, would replay project
+  // A's stored Consent Mode state under project B and log it as a success. So for
+  // that tag the rule is strict - the two must be equal - and when there is no
+  // effective Cookies Version at all the replay is skipped and said out loud,
+  // because nothing left in the payload can attribute the consent to either.
   //
   // All three keys are built from metadataPrefix, because the project - not this
   // template - decides what they are called.
@@ -1286,7 +1370,7 @@ const main = (data) => {
   // logToConsole only reaches a debug environment, so the reasons appear in
   // Preview and never in production. Every branch still falls through to the SDK
   // injection: these lines diagnose, they never change the outcome.
-  const cookieValues = (product === 'publishers') ? undefined : getCookieValues('axeptio_cookies');
+  const cookieValues = (resolvedProduct === 'publishers') ? undefined : getCookieValues('axeptio_cookies');
   if (cookieValues && cookieValues.length > 0) {
     const raw = cookieValues[0];
     let parsed = JSON.parse(raw);
@@ -1296,15 +1380,23 @@ const main = (data) => {
     }
     const readable = !!parsed && typeof parsed === 'object';
     const cookieConfig = readable ? parsed[cookiesVersionKey] : undefined;
+    // Whichever half of $$cookiesVersion the configuration in force is written in.
+    // An id is only ever recorded under identifier, and the bare-string form of
+    // the key is the NAME on its own - so against an id it is not a value that can
+    // be compared at all, and is left unknown rather than compared as if it were.
     let cookieVersionName;
-    if (typeof cookieConfig === 'string') {
+    if (versionIsId) {
+      if (!!cookieConfig && typeof cookieConfig === 'object') {
+        cookieVersionName = cookieConfig.identifier;
+      }
+    } else if (typeof cookieConfig === 'string') {
       cookieVersionName = cookieConfig;
     } else if (!!cookieConfig && typeof cookieConfig === 'object') {
       cookieVersionName = cookieConfig.name;
     }
-    const configMismatch = regionRowMatched ?
-      (cookieVersionName !== cookiesVersion) :
-      (cookiesVersionSet && !!cookieVersionName && cookieVersionName !== cookiesVersion);
+    const configMismatch = strictAttribution ?
+      (cookieVersionName !== resolvedCookiesVersion) :
+      (cookiesVersionSet && !!cookieVersionName && cookieVersionName !== resolvedCookiesVersion);
     if (!readable) {
       // The Brands SDK lz-string-compresses the cookie when compressUserCookie is
       // on - always when it is 'forced', otherwise once the payload passes ~3 KB
@@ -1319,9 +1411,16 @@ const main = (data) => {
       logToConsole('Axeptio GTM tag: per-region row matched but no Cookies Version is set; the cookie cannot be attributed to this project, early consent skipped');
     } else if (configMismatch) {
       if (cookieVersionName === undefined) {
-        // Strict mode only: the cookie carries no configuration name at all, which
-        // the lenient rule would have let through.
-        logToConsole('Axeptio GTM tag: skipping early consent, the cookie carries no configuration name and a per-region row is in force');
+        // Strict mode only: the cookie carries nothing this tag can compare, which
+        // the lenient rule would have let through. Two ways to get here, and they
+        // have different fixes - a row-driven tag whose cookie names no
+        // configuration, and a resolver-driven tag whose cookie predates the
+        // identifier being recorded (or carries only the bare configuration name).
+        if (versionIsId) {
+          logToConsole('Axeptio GTM tag: skipping early consent, the cookie carries no configuration identifier to match the resolved configuration against');
+        } else {
+          logToConsole('Axeptio GTM tag: skipping early consent, the cookie carries no configuration name and a per-region row is in force');
+        }
       } else {
         logToConsole('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "' + cookieVersionName + '"');
       }
@@ -1389,7 +1488,15 @@ const main = (data) => {
   }
 };
 
-main(data);
+applyConsentDefaults();
+
+// With the resolver off, the replay runs here - the same call, in the same place
+// in the run, against the same values as before this file grew a second path.
+// With it on, the call moves to the geolocation callback at the foot of the file,
+// where the product and the configuration are finally known.
+if (!autoResolveConfig) {
+  replayEarlyConsent(product, cookiesVersion, false);
+}
 
 }
 
@@ -1542,14 +1649,13 @@ if (additionalSettings && typeof additionalSettings.length === 'number') {
     axeptioSettings[key] = coerceSettingValue(entry.value);
   }
 }
-setInWindow('axeptioSettings', axeptioSettings, true);
-
 // Brands and Publishers are different SDK builds, so the URL has to follow the
 // product the Project ID belongs to - the resolved one, which is the per-region
-// row's product when a row matched and the field's otherwise. normaliseProduct
-// has already reduced it to exactly 'brands' or 'publishers', so anything
-// unrecognised has been named and turned into Brands, which keeps tags saved
-// before this field existed working unchanged.
+// row's product when a row matched, the geolocation service's answer when it
+// gave one, and the field's otherwise. normaliseProduct has already reduced the
+// configured value to exactly 'brands' or 'publishers', so anything unrecognised
+// has been named and turned into Brands, which keeps tags saved before this
+// field existed working unchanged.
 //
 // Both URLs must stay loadable as a CLASSIC script. injectScript() creates a
 // plain <script> and sandboxed JS cannot set type="module", so an ES-module
@@ -1560,16 +1666,171 @@ setInWindow('axeptioSettings', axeptioSettings, true);
 // Publishers path breaks here with a green tag and no banner.
 //
 // Ordering is also load-bearing: a classic script is not deferred, so the SDK
-// reads window.axeptioSettings as it boots. setInWindow() above runs before
-// this injection, which is what makes that safe.
-const sdkUrl = product === 'publishers' ?
-  'https://static.axept.io/tcf/sdk.js' :
-  'https://static.axept.io/sdk.js';
+// reads window.axeptioSettings as it boots. Every caller below writes the
+// settings before calling this, which is what makes that safe.
+const loadSdk = (resolvedProduct) => {
+  const sdkUrl = resolvedProduct === 'publishers' ?
+    'https://static.axept.io/tcf/sdk.js' :
+    'https://static.axept.io/sdk.js';
 
-if (queryPermission('inject_script', sdkUrl)) {
-  injectScript(sdkUrl, data.gtmOnSuccess, data.gtmOnFailure);
+  if (queryPermission('inject_script', sdkUrl)) {
+    injectScript(sdkUrl, data.gtmOnSuccess, data.gtmOnFailure);
+  } else {
+    data.gtmOnFailure();
+  }
+};
+
+if (!autoResolveConfig) {
+  setInWindow('axeptioSettings', axeptioSettings, true);
+  loadSdk(product);
 } else {
-  data.gtmOnFailure();
+  // Ask Axeptio which configuration this visitor should be shown. A GTM web
+  // template cannot read an HTTP response - the sandbox has no fetch and no XHR,
+  // sendHttpGet is server-side only and sendPixel returns nothing - so the only
+  // answer it can act on is a script it injects. This one assigns
+  // window.axeptioSettings.cookiesVersion (a configuration id) and
+  // window.axeptioSettings.flowType, and is read back off the window below. On
+  // an error it still returns valid JavaScript with a non-2xx status, so the
+  // failure callback fires cleanly instead of a JSON body throwing on the page.
+  // Contract: headless-cmp docs/GTM_INTEGRATION.md.
+  const geoUrl = 'https://headless-api.axeptio.tech/public/geolocation/' + projectId + '.js';
+
+  // A browser fires exactly one of an injected script's two callbacks, never
+  // both - but the property that matters here is that the visitor gets one CMP
+  // and never two, so it is enforced rather than assumed.
+  let answered = false;
+
+  // The tail every path through this block shares: the replay judged against the
+  // product and configuration that won, one write of the settings, one SDK.
+  const finishWithResolved = (resolvedProduct, resolvedCookiesVersion, versionIsId, liveSettings) => {
+    if (answered) {
+      return;
+    }
+    answered = true;
+
+    replayEarlyConsent(resolvedProduct, resolvedCookiesVersion, versionIsId);
+
+    // Start from the settings THIS TAG built and lay the live object's keys on
+    // top, never the other way round. The geolocation script is documented to
+    // extend what it finds, but nothing on a page guarantees it: a page script
+    // assigning window.axeptioSettings a fresh object, or a copyFromWindow that
+    // hands back less than the window holds, would otherwise carry clientId,
+    // platform, dataLayerName, proxyBaseUrl and every Additional Settings row away
+    // with it - and the SDK would boot with no project at all, which is a blank
+    // page and nothing logged. flowType is kept only when the tag acted on it:
+    // then it is the service's own record of which flow it put this visitor in
+    // and belongs on the window it was written to. When the tag fell back to the
+    // configured product instead, a flowType left behind would claim a flow the
+    // page is not running, so it is not carried over. Written back in ONE
+    // setInWindow of the WHOLE object, because access_globals lists keys and not
+    // paths: assigning axeptioSettings.cookiesVersion on its own would need a
+    // grant this template deliberately does not request.
+    const merged = axeptioSettings;
+    if (!!liveSettings && typeof liveSettings === 'object') {
+      const liveKeys = Object.keys(liveSettings);
+      for (let keyIndex = 0; keyIndex < liveKeys.length; keyIndex += 1) {
+        if (liveKeys[keyIndex] === 'flowType' && !versionIsId) { continue; }
+        merged[liveKeys[keyIndex]] = liveSettings[liveKeys[keyIndex]];
+      }
+    }
+    merged.cookiesVersion = resolvedCookiesVersion;
+    if (consentUpdateAlreadySent) {
+      merged.consentUpdateAlreadySent = true;
+    }
+    setInWindow('axeptioSettings', merged, true);
+
+    loadSdk(resolvedProduct);
+  };
+
+  // The script loaded. What it assigned - if anything - decides the flow.
+  // 'tcf' and 'brands' are the service's vocabulary; 'publishers' is this
+  // template's name for the same build, so the two are mapped here, at the
+  // boundary, rather than either side being renamed.
+  const onGeoAnswer = () => {
+    const liveSettings = copyFromWindow('axeptioSettings');
+    const settingsReadable = !!liveSettings && typeof liveSettings === 'object';
+    const flowType = settingsReadable ? liveSettings.flowType : undefined;
+
+    if (flowType === 'tcf' || flowType === 'brands') {
+      const resolvedProduct = (flowType === 'tcf') ? 'publishers' : 'brands';
+      // The service answers with a configuration id, which is what the SDK is
+      // given and what the cookie records under $$cookiesVersion.identifier.
+      // Flow and configuration are paired: the service assigns both or neither,
+      // so a flow with no 24-character id next to it is not the service's answer
+      // - a stale flowType left on the window by someone else, or a partial
+      // response - and loading a bundle from it could pair the configured
+      // Cookies Version with the wrong SDK. Neither half is trusted then.
+      const answeredVersion = settingsReadable ? liveSettings.cookiesVersion : undefined;
+      if (isProjectId(answeredVersion)) {
+        logToConsole('Axeptio GTM tag: geolocation resolved ' + resolvedProduct +
+          ', configuration ' + answeredVersion);
+        finishWithResolved(resolvedProduct, answeredVersion, true, liveSettings);
+      } else {
+        logToConsole('Axeptio GTM tag: geolocation answered a flow without a configuration; using the configured product');
+        finishWithResolved(product, cookiesVersion, false, liveSettings);
+      }
+      return;
+    }
+
+    // The script ran and said nothing this tag can act on. That is a real answer
+    // - no configuration matches this visitor - and it is not a reason to leave
+    // the page without a banner: the configured product and Cookies Version are
+    // exactly what the tag would have used with the toggle off.
+    if (flowType === undefined) {
+      // Two different answers arrive here and only one of them is the 404. The
+      // service names a configuration and a flow together or neither, so a
+      // cookiesVersion with no flowType means it DID match a configuration and
+      // this tag simply cannot tell which SDK that configuration belongs to.
+      // Guessing loads the wrong build, so the configured product and Cookies
+      // Version stand either way - but Preview must not tell a publisher that
+      // nothing matched them when something did.
+      if (isProjectId(settingsReadable ? liveSettings.cookiesVersion : undefined)) {
+        logToConsole('Axeptio GTM tag: geolocation answered a configuration without a flow; using the configured product');
+      } else {
+        logToConsole('Axeptio GTM tag: geolocation service matched no configuration for this visitor; using the configured product');
+      }
+    } else {
+      logToConsole('Axeptio GTM tag: geolocation service answered with an unrecognised flow "' +
+        flowType + '"; using the configured product');
+    }
+    finishWithResolved(product, cookiesVersion, false, liveSettings);
+  };
+
+  // The request 4xx'd, 5xx'd, was blocked, or never arrived. Same fallback: a
+  // geolocation lookup that fails must degrade to the configured configuration,
+  // never block the banner.
+  const onGeoFailed = () => {
+    logToConsole('Axeptio GTM tag: geolocation lookup failed; using the configured product');
+    // No live settings to read: the script never executed, so nothing of the
+    // service's is on the window and the tag's own object is the whole truth.
+    finishWithResolved(product, cookiesVersion, false, undefined);
+  };
+
+  if (!isProjectId(projectId)) {
+    // Nothing good comes of asking. A blank id builds
+    // /public/geolocation/.js, which is a different endpoint answering about no
+    // project; a value holding '../' passes queryPermission on the string as
+    // written and is then normalised by the browser into some other path on that
+    // host. Neither is a lookup, and both would spend a request before the SDK to
+    // learn nothing. The configured product and Cookies Version stand, which is
+    // what a tag with a broken Project ID would have loaded anyway.
+    logToConsole('Axeptio GTM tag: Project ID is not a 24-character id; geolocation lookup skipped');
+    finishWithResolved(product, cookiesVersion, false, undefined);
+  } else if (!queryPermission('inject_script', geoUrl)) {
+    // A gallery template's permissions are fixed when its version is published,
+    // so this is a container running a version from before the geolocation entry
+    // existed, or one whose permission block was edited by hand. The visitor
+    // still gets a banner - the tag does exactly what it does with the toggle
+    // off - and Preview says why the toggle had no effect.
+    logToConsole('Axeptio GTM tag: geolocation service not permitted; using the configured product');
+    finishWithResolved(product, cookiesVersion, false, undefined);
+  } else {
+    // Written before the geolocation script runs, so that script extends this
+    // tag's settings rather than creating an object of its own, and so the page
+    // is never left with no settings at all while the answer is in flight.
+    setInWindow('axeptioSettings', axeptioSettings, true);
+    injectScript(geoUrl, onGeoAnswer, onGeoFailed);
+  }
 }
 
 
@@ -1616,6 +1877,10 @@ ___WEB_PERMISSIONS___
               {
                 "type": 1,
                 "string": "https://static.axept.io/tcf/sdk.js"
+              },
+              {
+                "type": 1,
+                "string": "https://headless-api.axeptio.tech/public/geolocation/*"
               }
             ]
           }
@@ -3718,6 +3983,451 @@ scenarios:
     runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: '   '});
 
     assertThat(states).isEqualTo({ad_storage: 'granted'});
+- name: With the resolver off no geolocation request is made
+  code: |-
+    // The toggle is opt-in, so a tag that never opened the group behaves exactly as
+    // it did before the resolver existed: one injection, straight to the SDK, and
+    // the window is never read back.
+    const injected = [];
+    mock('injectScript', (url) => { injected.push(url); });
+
+    runCode({id: '6a22da4da7d365c1e246783d'});
+
+    assertThat(injected).isEqualTo(['https://static.axept.io/sdk.js']);
+    assertApi('copyFromWindow').wasNotCalled();
+- name: The resolver asks about the project and then loads the flow it answered
+  code: |-
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({
+      clientId: '6a22da4da7d365c1e246783d',
+      cookiesVersion: '6904ca84683c996cd3788342',
+      flowType: 'tcf'
+    }));
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    // The geolocation script first, the SDK only from its callback - and the flow
+    // the service named beats the Axeptio product field.
+    assertThat(injected).isEqualTo([
+      'https://headless-api.axeptio.tech/public/geolocation/6a22da4da7d365c1e246783d.js',
+      'https://static.axept.io/tcf/sdk.js'
+    ]);
+    // The configuration id reaches the SDK as cookiesVersion, which is what makes
+    // the resolved configuration the one that loads.
+    assertThat(settings.cookiesVersion).isEqualTo('6904ca84683c996cd3788342');
+    assertThat(settings.flowType).isEqualTo('tcf');
+- name: A brands answer loads the Brands bundle
+  code: |-
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'brands'}));
+
+    runCode({id: '6a22da4da7d365c1e246783d', product: 'publishers', autoResolveConfig: true});
+
+    assertThat(injected[1]).isEqualTo('https://static.axept.io/sdk.js');
+- name: A geolocation answer that assigns nothing keeps the configured product
+  code: |-
+    // The 404 shape: the script runs and sets no flow at all. That is an answer -
+    // no configuration matches this visitor - and the fields above are the fallback.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({
+      clientId: '6a22da4da7d365c1e246783d',
+      cookiesVersion: 'my-config'
+    }));
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'publishers',
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertThat(injected[1]).isEqualTo('https://static.axept.io/tcf/sdk.js');
+    assertThat(settings.cookiesVersion).isEqualTo('my-config');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: geolocation service matched no configuration for this visitor; using the configured product');
+- name: A geolocation answer that replaces the settings object keeps the tag settings
+  code: |-
+    // The service is documented to EXTEND window.axeptioSettings, but a page script
+    // - or a lossy read of the window - can hand back an object holding only what
+    // the geolocation script assigned. Written back as-is that takes clientId and
+    // every other setting with it, and the SDK boots with no project: a blank page
+    // and nothing in Preview to say why.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({
+      cookiesVersion: '6904ca84683c996cd3788342',
+      flowType: 'brands'
+    }));
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      dataLayerName: 'myDataLayer',
+      autoResolveConfig: true,
+      axeptioAdditionalSettings: [{key: 'compressUserCookie', value: 'true'}]
+    });
+
+    assertThat(injected[1]).isEqualTo('https://static.axept.io/sdk.js');
+    // What the tag built survives...
+    assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
+    assertThat(settings.platform).isEqualTo('tms-gtm');
+    assertThat(settings.dataLayerName).isEqualTo('myDataLayer');
+    assertThat(settings.compressUserCookie).isEqualTo(true);
+    // ...and so does what the service answered.
+    assertThat(settings.cookiesVersion).isEqualTo('6904ca84683c996cd3788342');
+    assertThat(settings.flowType).isEqualTo('brands');
+- name: A blank Project ID makes no geolocation request
+  code: |-
+    // The URL would be /public/geolocation/.js - a different endpoint, about no
+    // project, spending a request before the SDK to learn nothing.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({flowType: 'tcf'}));
+
+    runCode({id: '', product: 'brands', autoResolveConfig: true});
+
+    assertThat(injected).isEqualTo(['https://static.axept.io/sdk.js']);
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: Project ID is not a 24-character id; geolocation lookup skipped');
+- name: A Project ID holding a relative path makes no geolocation request
+  code: |-
+    // queryPermission matches the URL as written, so a value carrying ../ passes the
+    // permission and is then normalised by the browser into another path on that
+    // host. It is 24 characters long here on purpose: only the hex check catches it.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({flowType: 'tcf'}));
+
+    runCode({id: '../../../aaaaaaaaaaaaaaa', product: 'brands', autoResolveConfig: true});
+
+    assertThat(injected).isEqualTo(['https://static.axept.io/sdk.js']);
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: Project ID is not a 24-character id; geolocation lookup skipped');
+- name: A configuration answered without a flow is not reported as no match
+  code: |-
+    // The service names a configuration and a flow together or neither, so an id
+    // with no flow is not the 404 shape. The decision is the same - this tag will
+    // not guess which SDK that configuration belongs to - but Preview must not tell
+    // a publisher that nothing matched them when something did.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({
+      clientId: '6a22da4da7d365c1e246783d',
+      cookiesVersion: '6904ca84683c996cd3788342'
+    }));
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertThat(injected[1]).isEqualTo('https://static.axept.io/sdk.js');
+    assertThat(settings.cookiesVersion).isEqualTo('my-config');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: geolocation answered a configuration without a flow; using the configured product');
+- name: A flow answered without a configuration keeps the configured product
+  code: |-
+    // The mirror case: a flowType with no 24-character configuration id beside
+    // it. The service assigns both or neither, so this is a stale value left on
+    // the window or a partial response, not an answer - acting on the flow alone
+    // could pair the configured Cookies Version with the wrong SDK.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({
+      clientId: '6a22da4da7d365c1e246783d',
+      flowType: 'tcf'
+    }));
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertThat(injected.length).isEqualTo(2);
+    assertThat(injected[1]).isEqualTo('https://static.axept.io/sdk.js');
+    assertThat(settings.cookiesVersion).isEqualTo('my-config');
+    // A flow the tag did not act on must not stay on the window claiming it did.
+    assertThat(settings.flowType).isUndefined();
+    assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: geolocation answered a flow without a configuration; using the configured product');
+- name: An unrecognised flow keeps the configured product and configuration
+  code: |-
+    // The service speaks tcf and brands. Anything else is a contract this tag does
+    // not understand, so neither half of the answer is trusted - taking the
+    // configuration id without knowing its flow could load a TCF configuration into
+    // the Brands SDK.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'publishers'}));
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertThat(injected[1]).isEqualTo('https://static.axept.io/sdk.js');
+    assertThat(settings.cookiesVersion).isEqualTo('my-config');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: geolocation service answered with an unrecognised flow "publishers"; using the configured product');
+- name: A failed geolocation lookup still loads the configured SDK
+  code: |-
+    const injected = [];
+    mock('injectScript', (url, onSuccess, onFailure) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onFailure(); }
+    });
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'publishers',
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertThat(injected).isEqualTo([
+      'https://headless-api.axeptio.tech/public/geolocation/6a22da4da7d365c1e246783d.js',
+      'https://static.axept.io/tcf/sdk.js'
+    ]);
+    assertThat(settings.cookiesVersion).isEqualTo('my-config');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: geolocation lookup failed; using the configured product');
+- name: A geolocation host the permissions do not cover loads the SDK directly
+  code: |-
+    // A gallery template carries the permissions of the version the container
+    // installed, so a tag ticking this box on an older version must still show a
+    // banner rather than aborting.
+    const injected = [];
+    mock('queryPermission', (name, url) => url.indexOf('headless-api') === -1);
+    mock('injectScript', (url) => { injected.push(url); });
+
+    runCode({id: '6a22da4da7d365c1e246783d', autoResolveConfig: true});
+
+    assertThat(injected).isEqualTo(['https://static.axept.io/sdk.js']);
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: geolocation service not permitted; using the configured product');
+- name: A per-region row decides which project the geolocation service is asked about
+  code: |-
+    // The table picks the PROJECT, the resolver picks the configuration within it -
+    // so the row wins on the id and the service wins on the flow.
+    const injected = [];
+    mock('injectScript', (url, onSuccess) => {
+      injected.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'brands'}));
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      autoResolveConfig: true,
+      visitorCountry: 'FR',
+      regionProjects: [{regions: 'FR', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'}]
+    });
+
+    assertThat(injected).isEqualTo([
+      'https://headless-api.axeptio.tech/public/geolocation/aaaaaaaaaaaaaaaaaaaaaaaa.js',
+      'https://static.axept.io/sdk.js'
+    ]);
+    assertThat(settings.cookiesVersion).isEqualTo('6904ca84683c996cd3788342');
+    // The row's own product is publishers and the service answers brands. Preview
+    // must not print both as if they were both loading.
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: visitor country FR matched per-region row 1; loading project aaaaaaaaaaaaaaaaaaaaaaaa; the geolocation service decides the flow');
+- name: With the resolver on the consent replay waits for the geolocation answer
+  code: |-
+    // The defaults have to precede every other tag, so they fire immediately. The
+    // replay does not: it decides whether a stored consent belongs to this project
+    // from the product and the configuration, and neither is known until the answer
+    // comes back. Replaying a Brands cookie into a TCF page is a compliance failure,
+    // so the order below is the feature, not an implementation detail.
+    const order = [];
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'some-other-name', identifier: '6904ca84683c996cd3788342'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('setDefaultConsentState', () => { order.push('setDefaultConsentState'); });
+    mock('getCookieValues', () => { order.push('getCookieValues'); return [cookie]; });
+    mock('updateConsentState', () => { order.push('updateConsentState'); });
+    mock('injectScript', (url, onSuccess) => {
+      order.push(url);
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'brands'}));
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [],
+      autoResolveConfig: true
+    });
+
+    assertThat(order).isEqualTo([
+      'setDefaultConsentState',
+      'https://headless-api.axeptio.tech/public/geolocation/6a22da4da7d365c1e246783d.js',
+      'getCookieValues',
+      'updateConsentState',
+      'https://static.axept.io/sdk.js'
+    ]);
+- name: A resolved configuration is matched against the cookie identifier
+  code: |-
+    // The tag Cookies Version is a configuration NAME; the service answers with an
+    // ID. The cookie records both, so the comparison follows whichever the tag is
+    // actually loading. Here the name does not match anything and the identifier
+    // does - by name this cookie would have been skipped.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'some-other-name', identifier: '6904ca84683c996cd3788342'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+    mock('setInWindow', (key, value) => { settings = value; });
+    mock('injectScript', (url, onSuccess) => {
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'brands'}));
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [],
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+    // Deferred replay or not, the SDK still has to be told the update went out.
+    assertThat(settings.consentUpdateAlreadySent).isEqualTo(true);
+- name: A cookie from another resolved configuration is not replayed
+  code: |-
+    // The other half of the identifier comparison: the cookie belongs to a
+    // configuration of this project that this visitor is no longer being shown.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'my-config', identifier: 'bbbbbbbbbbbbbbbbbbbbbbbb'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('setInWindow', (key, value) => { settings = value; });
+    mock('injectScript', (url, onSuccess) => {
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'brands'}));
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [],
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertThat(settings.consentUpdateAlreadySent).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "bbbbbbbbbbbbbbbbbbbbbbbb"');
+- name: A cookie with no identifier is not replayed against a resolved configuration
+  code: |-
+    // A cookie old enough to carry only the bare configuration name cannot be
+    // compared to an id at all, so it is skipped with a reason of its own rather
+    // than passed off as a name mismatch.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': 'my-config',
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+    mock('injectScript', (url, onSuccess) => {
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'brands'}));
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [],
+      cookiesVersion: 'my-config',
+      autoResolveConfig: true
+    });
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: skipping early consent, the cookie carries no configuration identifier to match the resolved configuration against');
+- name: A tcf answer never replays the shared consent cookie
+  code: |-
+    // The compliance line the deferral exists for: the cookie was written by the
+    // Brands SDK, the visitor is being shown TCF, and the cookie is never read.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'my-config', identifier: '6904ca84683c996cd3788342'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+    mock('injectScript', (url, onSuccess) => {
+      if (url.indexOf('headless-api') !== -1) { onSuccess(); }
+    });
+    mock('copyFromWindow', () => ({cookiesVersion: '6904ca84683c996cd3788342', flowType: 'tcf'}));
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [],
+      product: 'brands',
+      autoResolveConfig: true
+    });
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('getCookieValues').wasNotCalled();
 
 
 ___NOTES___

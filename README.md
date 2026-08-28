@@ -45,10 +45,11 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | **Cookies Version** | — | Loads a named cookie configuration. Left empty, the configuration's `pages` property decides. |
 
 <details>
-<summary><strong>Per-region projects</strong></summary>
+<summary><strong>Regions and geolocation</strong></summary>
 
 | Field | What it does |
 | --- | --- |
+| Let Axeptio pick the configuration from the visitor's location | Asks Axeptio which configuration this visitor should be shown, instead of pinning one above. Off by default. See [below](#letting-axeptio-pick-the-configuration). |
 | Visitor country (GTM variable) | A variable holding the visitor's ISO 3166-1 alpha-2 country (`FR`) or ISO 3166-2 subdivision (`US-CA`), typically from a CDN or server-side geolocation header. Left empty, the two fields above are always used. |
 | Projects by region | One row per set of regions, each naming the **Project ID**, the **Axeptio product** and optionally the **Cookies Version** to load there. The first matching row replaces those fields above. See [below](#serving-brands-in-some-countries-and-tcf-in-others). |
 
@@ -85,7 +86,7 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | --- | --- |
 | Activate Google Consent Mode v2 | Master switch, **on by default for new tags**. A new tag left with an empty Default Settings table therefore denies `analytics_storage`, `ad_storage`, `ad_user_data` and `ad_personalization` in every region and grants `security_storage`. Untick the box and nothing below applies. A tag you saved with the box unticked keeps it unticked — GTM stores the explicit value and never rewrites a saved tag when a template default changes. |
 | Default Settings | Per-region defaults for all seven consent types: `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`, `functionality_storage`, `personalization_storage`, `security_storage`. `security_storage` defaults to **Granted** (denying it breaks sign-in and fraud prevention); `functionality_storage` and `personalization_storage` default to **Not set**, which sends no default for them and so leaves Google's own default of granted — a Brands site only ever updates the four advertising and analytics types, so a denied default there would never be lifted. Leaving the table empty denies those four in every region and grants `security_storage` — it does not mean "no default". |
-| Wait for update (ms) | How long Google tags wait for the visitor's stored choice before using the defaults above. Defaults to `500`, which covers the replay from the consent cookie; raise it (2000 is common) if tags fire before the banner on a first visit. |
+| Wait for update (ms) | How long Google tags wait for the visitor's stored choice before using the defaults above. Defaults to `500`, which covers the replay from the consent cookie when the tag replays it inline. With [Let Axeptio pick the configuration](#letting-axeptio-pick-the-configuration) ticked the replay waits for the geolocation lookup first, so set `1500`–`2000` there. Raise it (2000 is common) in any case if tags fire before the banner on a first visit. |
 | Redact Ads Data | Stops advertising cookies being set while `ad_storage` is denied. |
 | Pass through URL parameters | Preserves ad click information across pages when cookies are denied. |
 
@@ -139,15 +140,80 @@ Axeptio ships two products, and **they are different SDKs**:
 | **Brands** (standard CMP) | `static.axept.io/sdk.js` | Most sites |
 | **Publishers** (TCF) | `static.axept.io/tcf/sdk.js` | Sites needing an IAB TCF banner |
 
-The **Axeptio product** field must match the product your Project ID belongs to. A Publishers
-Project ID with the product left on Brands loads the wrong SDK and no TCF banner appears.
+The **Axeptio product** field must match the product your Project ID belongs to — unless you
+let Axeptio pick the configuration, in which case the answer decides the flow and the field is
+only the fallback. A Publishers Project ID with the product left on Brands loads the wrong SDK
+and no TCF banner appears.
+
+#### Letting Axeptio pick the configuration
+
+Tick **Let Axeptio pick the configuration from the visitor's location** (under *Regions and
+geolocation*) and the tag asks Axeptio which configuration this visitor should be shown,
+instead of you pinning one in the fields above.
+
+What happens on the page, in order:
+
+1. The Consent Mode defaults go out first, as they always do — they have to precede every
+   other tag, and they do not depend on which banner ends up loading.
+2. The tag makes **one extra request**, to
+   `https://headless-api.axeptio.tech/public/geolocation/<your project ID>.js`. Axeptio locates
+   the visitor and answers with the flow — Brands or Publishers — and the configuration id its
+   own targeting rules select for that project, looking at **both** flows and preferring the
+   more specific match (a configuration naming the visitor's country beats one that only
+   matches their regulation; on an exact tie, TCF wins).
+3. The tag loads the SDK the answer named, with that configuration, and only then replays a
+   returning visitor's stored consent — a stored choice is only replayed once the tag knows
+   which product and configuration it belongs to.
+
+**Raise Wait for update if you use Consent Mode.** Because step 3 now waits for step 2, the
+replay of a returning visitor's stored choice sits behind a network round trip rather than
+happening inline. The default `500` ms was sized for the inline replay; with this box ticked,
+`1500`–`2000` is the value to set. The tag does not change it for you — the grace period is a
+promise your tag makes to every other tag in the container.
+
+**A failed lookup never costs you a banner.** If the request fails, if nothing matches the
+visitor, if the answer is not one this template understands, or if the container is running a
+template version published before the permission below existed, the tag falls back to the
+**Axeptio product** and **Cookies Version** you configured — exactly what it would have loaded
+with the box unticked. GTM Preview names what was resolved, or why it was not.
+
+Two things worth knowing:
+
+- **It applies to whichever project the tag ends up loading** — the Project ID above, or the
+  one a *Projects by region* row chose. The table picks the project; this picks the
+  configuration *within* it, and the flow it belongs to.
+- **This is a new permission.** The tag now declares
+  `https://headless-api.axeptio.tech/public/geolocation/*` alongside the two SDK URLs under
+  `inject_script`, so GTM shows it when the template is added or updated. It is requested
+  whether or not you tick the box; nothing is requested from that host unless you do.
+
+One limit worth stating plainly: a request the service **accepts but never answers** has no
+timeout. A GTM web template has no timer API at all, so the tag waits for the browser to
+resolve the script one way or the other, and until it does no SDK loads and no banner appears.
+That is the same exposure the SDK URL itself carries — `static.axept.io` hanging has always
+had the same effect — and it is why the fallbacks above cover every answer the service *does*
+give, including the ones it gives with an error status.
+
+`Cookies Version` is still honoured — as the fallback. Leave it empty on a tag that relies on
+the resolver, unless you want a specific configuration when the lookup cannot answer.
 
 #### Serving Brands in some countries and TCF in others
 
-Axeptio's geolocated display selects between configurations *within* one product — there is no
-path from Brands to Publishers. Crossing that boundary needs two projects and a choice made in
-the container, before the SDK loads. The **Per-region projects** group makes that choice in the
-tag itself:
+The Axeptio SDK's own geolocated display selects between configurations *within* one product —
+once a build has booted there is no path from Brands to Publishers. So the choice has to be
+made in the container, before the SDK loads. There are two ways to make it, and they solve
+different problems:
+
+- **One project holding both a Brands and a TCF configuration**: tick
+  [Let Axeptio pick the configuration](#letting-axeptio-pick-the-configuration) and Axeptio
+  resolves across both flows for you. Nothing about the visitor's country needs to reach the
+  container at all.
+- **Two separate projects**: the **Projects by region** table below picks between them from a
+  country variable you already have.
+
+The two compose — a row picks the project, the resolver picks the configuration inside it.
+
+The table makes the choice in the tag itself:
 
 1. Set **Visitor country (GTM variable)** to a variable holding the visitor's country. GTM has no
    geolocation of its own, so it comes from your CDN or server-side container — a `CF-IPCountry`,

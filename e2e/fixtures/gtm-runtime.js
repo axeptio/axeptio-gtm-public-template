@@ -27,8 +27,18 @@ export class PermissionError extends Error {
   }
 }
 
+// Which local stub stands in for which real host. The template injects two
+// different kinds of script now — the SDK bundle and the geolocation answer — and
+// they are not interchangeable: one boots a CMP, the other assigns two keys onto
+// window.axeptioSettings. Keyed on the real URL's HOST so the choice follows what
+// the template actually asked for, never what the test expected it to ask for.
+const GEO_HOST = 'headless-api.axeptio.tech';
+
 export function createRuntime(permissions, options = {}) {
-  const { stubUrl = '/e2e/fixtures/stub-sdk.js' } = options;
+  const {
+    stubUrl = '/e2e/fixtures/stub-sdk.js',
+    geoStubUrl = '/e2e/fixtures/stub-geo.js',
+  } = options;
   const checker = createPermissionChecker(permissions);
 
   const calls = [];
@@ -70,11 +80,26 @@ export function createRuntime(permissions, options = {}) {
       if (!checker.injectScript(url)) throw new PermissionError('inject_script', url);
       const script = document.createElement('script');
       // Hermetic: never leave the machine. The real URL rides along so the test can
-      // assert which bundle the template chose.
-      script.src = `${stubUrl}?real=${encodeURIComponent(url)}`;
+      // assert which bundle the template chose. The stub is picked from the real
+      // URL's host, after the permission check above, so a template that asked the
+      // wrong host gets the wrong stub rather than a quietly working one.
+      let host = '';
+      try {
+        host = new URL(url).hostname;
+      } catch {
+        host = '';
+      }
+      const stub = host === GEO_HOST ? geoStubUrl : stubUrl;
+      script.src = `${stub}?real=${encodeURIComponent(url)}`;
       script.onload = onSuccess;
       script.onerror = onFailure;
       document.head.appendChild(script);
+    },
+
+    copyFromWindow: (key) => {
+      record('copyFromWindow', [key]);
+      if (!checker.accessGlobals(key, 'read')) throw new PermissionError('access_globals', key);
+      return window[key];
     },
 
     setInWindow: (key, value, overwrite) => {

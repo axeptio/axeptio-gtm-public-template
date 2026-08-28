@@ -32,6 +32,12 @@
     window.runTemplate = (data) => {
       delete window.axeptioSettings;
       delete window.__axeptioStub;
+      delete window.__geoStub;
+      // Not window.__geoAnswer: that is an INPUT, planted before this call the way
+      // `data` is passed to it, so clearing it here would wipe what the test just
+      // asked for. It cannot go stale either — stub-geo.js consumes it, so a second
+      // run in the same test that plants nothing gets the no-match shape rather
+      // than the previous run's answer.
       window.dataLayer = [];
 
       const runtime = createRuntime(permissions);

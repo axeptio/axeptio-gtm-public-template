@@ -16,7 +16,12 @@ import { test, expect } from '@playwright/test';
 
 const BRANDS = '/e2e/fixtures/live-brands.html';
 const PUBLISHERS = '/e2e/fixtures/live-publishers.html';
+const RESOLVER = '/e2e/fixtures/live-resolver.html';
 const CLIENT_ID = process.env.AXEPTIO_TEST_CLIENT_ID;
+
+// The two bundles, as exact pathnames. Everything else static.axept.io serves —
+// lazy chunks, fonts, favicons — is not a CMP and must not be counted as one.
+const BUNDLE_PATHS = ['/sdk.js', '/tcf/sdk.js'];
 
 // The SDK is ~700 KB and arrives after GTM has loaded, evaluated the container and
 // fired the tag. Four network round trips before anything is observable.
@@ -218,6 +223,116 @@ async function loadedSdkPaths(page) {
       .filter((url) => url && url.hostname === 'static.axept.io')
       .map((url) => url.pathname));
 }
+
+// Of those pathnames, the ones that are a CMP bundle. Counting them is how "one
+// banner, not two" is asserted without knowing in advance which one it will be.
+async function loadedBundles(page) {
+  return (await loadedSdkPaths(page)).filter((path) => BUNDLE_PATHS.indexOf(path) !== -1);
+}
+
+// The geolocation request the tag made, or null until it has completed. Parsed
+// rather than substring-matched for the same reason as loadedSdkPaths: `includes`
+// would accept https://evil.example/headless-api.axeptio.tech.
+//
+// `responseStatus` is what makes the resolver assertable at all from a page that
+// cannot read the response body. It is a Chromium PerformanceResourceTiming field
+// and, unlike transferSize and the rest, it is exposed for cross-origin responses
+// without Timing-Allow-Origin, precisely so a page can tell a served answer from a
+// failed one. The service's contract has exactly two successful shapes — 200 with
+// a flow and a configuration, 404 with neither — and without the status the test
+// cannot tell which one it got, so it would have to accept either outcome and
+// could then never fail.
+async function geolocationLookup(page, wantedPath) {
+  return page.evaluate((wanted) => {
+    const entry = performance.getEntriesByType('resource').find((candidate) => {
+      let url = null;
+      try {
+        url = new URL(candidate.name);
+      } catch {
+        return false;
+      }
+      return url.hostname === 'headless-api.axeptio.tech' && url.pathname === wanted;
+    });
+    return entry ? { path: wanted, status: entry.responseStatus } : null;
+  }, wantedPath);
+}
+
+// The SDK telling the page it is running, by whichever entry point the answered
+// flow provides: the Brands overlay, or the TCF API. One of the two has to appear
+// whatever the service answered, which is what makes this the moment after which
+// "how many bundles loaded" is a settled number rather than one still going up.
+async function waitForCmpBoot(page) {
+  await page.waitForFunction(
+    () => typeof window.__tcfapi === 'function' || Boolean(document.querySelector('#axeptio_overlay')),
+    null,
+    { timeout: BOOT_TIMEOUT });
+}
+
+// The resolver, end to end: GTM fires the tag, the tag asks Axeptio which
+// configuration this visitor should be shown, and the answer decides which bundle
+// loads. No other layer can exercise this — the hermetic suite plants the answer
+// itself, and the unit scenarios mock both scripts.
+//
+// The flow is not pinned, because it cannot be: the answer depends on where the
+// GitHub runner is, which is Azure and moves. A run from an EU region can
+// legitimately get TCF, one from elsewhere Brands, and a project whose targeting
+// matches neither gets a 404 and the tag's configured fallback. What IS pinned is
+// the relationship between the answer and the outcome, which holds wherever the
+// runner sits — and the HTTP status is what makes that a real assertion rather
+// than a list of tolerated outcomes. Asserting "Brands loaded" alone would pass on
+// a broken read-back, which produces Brands for the wrong reason.
+test('Resolver: the geolocation answer decides which bundle loads', async ({ page }) => {
+  await page.goto(RESOLVER);
+
+  const settings = await waitForSettings(page);
+  expect(settings.clientId).toBe(CLIENT_ID);
+  // Proves these settings came from this template rather than a hand-rolled snippet.
+  expect(settings.platform).toBe('tms-gtm');
+
+  // The tag asked, at the path the inject_script permission covers. Polled: the
+  // resource entry appears when the request completes, not when it is made.
+  const geoPath = `/public/geolocation/${CLIENT_ID}.js`;
+  await expect.poll(() => geolocationLookup(page, geoPath), { timeout: BOOT_TIMEOUT }).not.toBeNull();
+  const lookup = await geolocationLookup(page, geoPath);
+
+  // Read AFTER the CMP has booted and only once. Polling a length that can only
+  // grow would sit for the whole timeout on the failure that matters most here —
+  // two bundles, meaning both of the injected script's callbacks ran and the
+  // visitor got two competing CMPs — and then report it as a timeout.
+  await waitForCmpBoot(page);
+  const bundles = await loadedBundles(page);
+  expect(bundles, `static.axept.io bundles loaded: ${JSON.stringify(bundles)}`).toHaveLength(1);
+
+  // Read from the live object rather than from the settings snapshot above: the
+  // template writes the resolved settings back in the same callback that injects
+  // the bundle, so this key does not exist yet when the tag first runs.
+  const flowType = await page.evaluate(() => window.axeptioSettings.flowType);
+
+  if (lookup.status === 200) {
+    // A match. The service assigned both keys, so the template had a flow to act
+    // on and the bundle must be that flow's — and a read-back that lost the
+    // service's assignments shows up here as a missing flowType rather than as a
+    // Brands bundle nobody questions.
+    expect(['tcf', 'brands'], `the service answered 200 with flowType ${JSON.stringify(flowType)}`)
+      .toContain(flowType);
+    expect(bundles, `flowType ${flowType}`)
+      .toEqual([flowType === 'tcf' ? '/tcf/sdk.js' : '/sdk.js']);
+  } else if (lookup.status === 404) {
+    // No configuration matches this visitor. The service returns the first line
+    // only, so nothing is assigned and the tag falls back to its configured
+    // product — Brands on this tag. "The fallback loaded nothing" is exactly the
+    // failure this branch exists to catch.
+    expect(flowType, 'a 404 assigns no flow').toBeUndefined();
+    expect(bundles, 'the configured fallback').toEqual(['/sdk.js']);
+  } else {
+    // 5xx, a redirect, or a request the browser never completed (status 0). None
+    // of them is an answer this suite can reason about, and tolerating them
+    // silently is how a broken endpoint would look like a passing run.
+    expect(lookup.status,
+      `the geolocation service answered ${lookup.status}; the contract is 200 (a match) or 404 (no match)`)
+      .toBe(200);
+  }
+});
 
 test('Brands: the container fires the tag and the real SDK boots', async ({ page }) => {
   await page.goto(BRANDS);
