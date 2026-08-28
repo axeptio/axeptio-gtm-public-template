@@ -48,8 +48,12 @@ also the only place the two halves can be counted against each other, which is h
 the **double consent default** stopped being a suspicion: it counts the
 `gtag('consent', …)` calls the SDK pushes into the dataLayer on top of the ones the
 template already made through GTM's API, and the TCF build sends a second, global
-all-denied default over the template's. That check is marked `test.fail`, so it stays
-green today and turns red the day the SDK stops doing it.
+all-denied default over the template's. That check asserts the count it observes
+today — one — rather than the zero it should be, with the SDK ask (ENG-13518) named
+beside it, so it stays green today and turns red the day the SDK stops doing it.
+Deliberately not `test.fail`: an expected-failure test swallows hook failures as
+expected too, which would make the page-error assertion inert on exactly the test
+most likely to see a new SDK error.
 
 A defect that reaches production has, by definition, escaped all five. When that
 happens, add the check to the cheapest layer that could have caught it.
@@ -136,6 +140,33 @@ Two settings the live suite depends on and the repository cannot see:
   write `$$googleConsentMode` into `axeptio_cookies`. That is Axeptio-side configuration,
   not GTM's. The round-trip test asserts on the key directly, so losing the setting
   surfaces here rather than silently in production.
+
+Both tags also hold parameter values the live suite asserts on, so editing a tag can
+turn the suite red without a line of this repository changing. They are configured
+identically apart from **Axeptio product** and **Cookies Version**:
+
+| Tag parameter | Stored on both tags | How the suite reads it |
+| --- | --- | --- |
+| User cookies duration (in days) | the string `"180"` | `userCookiesDuration === 180`. The parameter's own `defaultValue` is the number `180`, so GTM can carry either type; a value typed into the field is saved as text, and the template coerces it with `makeNumber`. The assertion is on the type the SDK receives |
+| User cookies secure | ticked | `userCookiesSecure === true` |
+| Trigger GTM Events | True | `triggerGTMEvents === true` |
+| Google Consent Mode v2 | on, one default row: all regions, `ad_storage`, `ad_user_data`, `ad_personalization` and `analytics_storage` denied | the consent block is gated on it; the round-trip test depends on the replay it enables |
+| Server-side URL, User cookies domain, dataLayer Name | unset | keys **present** on `window.axeptioSettings` holding `undefined` — the template's settings literal writes them unconditionally |
+| Consent cookie metadata prefix, First-party proxy base URL | unset | keys **absent** — the template assigns these two only when the tag set them |
+| Additional Axeptio Settings | no rows | no extra key on `window.axeptioSettings` |
+
+The last three rows are enforced by one assertion: the suite compares the **complete**
+key set, sorted, against the nine keys the tags produce today — `clientId`,
+`cookiesVersion`, `dataLayerName`, `platform`, `postConsentUrl`, `triggerGTMEvents`,
+`userCookiesDomain`, `userCookiesDuration`, `userCookiesSecure`. An Additional
+Settings row writes whatever key it names straight onto that object, so a forbidden-name
+list would never have mentioned it; the whole set catches it.
+
+Present-but-empty and absent are then asserted separately, because the SDK reads them
+differently. It filters `undefined` out of its merge, so a key holding nothing leaves
+the SDK's own default alone while a key holding a value overrides it — filling one of
+those three fields would leave the key set intact and still change what the SDK is
+handed. The live suite is the only place either would surface.
 
 The service account needs **Publish** on the container, not Edit — creating a version
 needs Approve and publishing needs Publish, so Edit fails halfway through the first
