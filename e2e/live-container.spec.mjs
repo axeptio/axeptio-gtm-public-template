@@ -22,12 +22,96 @@ const CLIENT_ID = process.env.AXEPTIO_TEST_CLIENT_ID;
 // fired the tag. Four network round trips before anything is observable.
 const BOOT_TIMEOUT = 30_000;
 
-test.beforeEach(async ({ page }) => {
+// Console entries the browser routes through `error` that are not the page
+// reporting a failure of its own: the network stack reporting a request it could
+// not complete. They are noise here by design — this suite asserts on what the
+// template and the SDK do with consent, and a CDN or a marketplace snippet having
+// a bad minute says nothing about either. With retries at 0 a single third-party
+// hiccup would otherwise turn the run red for a reason no one can act on.
+//
+// Still printed, because a run where the SDK failed to load is a run whose other
+// failures need that context.
+const RESOURCE_LOAD_NOISE = [
+  // Chromium's own wording for a subresource that 4xx'd, 5xx'd or was blocked.
+  /^Failed to load resource/,
+  // A network-layer failure surfaced directly: ERR_CONNECTION_RESET, ERR_FAILED,
+  // ERR_BLOCKED_BY_CLIENT and the rest of the family.
+  /^net::ERR_/,
+];
+
+// Page errors this suite tolerates, and the reason each one is tolerated.
+//
+// Exactly one entry today. A second needs its own reason written here, beside its
+// pattern: the defect this assertion exists to prevent is an SDK error scrolling
+// past unread, and an allowlist that grows without a stated cause is the same
+// defect one step later.
+const ALLOWED_PAGE_ERRORS = [
+  // A Piano integration configured on the CI Axeptio project. The SDK's marketplace
+  // loader evals Piano's snippet, which references `pa` — a global Piano's own tag
+  // defines and this bare fixture never loads. Two hooks report the one missing
+  // global, `piano` and `piano:init`. Pre-existing, nothing to do with the template,
+  // and harmless on a fixture that is not integrating with Piano.
+  //
+  // Anchored at BOTH ends so the entry cannot quietly cover a second failure that
+  // happens to start the same way. The tail allows the stack the SDK appends —
+  // it logs the error's `stack`, so the message is several lines — but nothing
+  // else: a novel error concatenated onto this one would no longer match.
+  /^\[Axeptio marketplace\] piano(:init)? failed: ReferenceError: pa is not defined(\n\s+at .*)*\s*$/,
+];
+
+// Console errors and uncaught exceptions raised by the page during the running
+// test. Module-level rather than a fixture because a worker runs one test at a
+// time, and beforeEach clears it, so nothing leaks in from the previous test.
+let pageErrors = [];
+
+test.beforeEach(({ page }) => {
+  pageErrors = [];
+
   // A failure here is nearly always the container, not the browser, so surface the
   // page's own console rather than making someone re-run with --debug.
+  const record = (text) => {
+    console.log(`  [page error] ${text}`);
+    pageErrors.push(text);
+  };
   page.on('console', (msg) => {
-    if (msg.type() === 'error') console.log(`  [page error] ${msg.text()}`);
+    if (msg.type() !== 'error') return;
+    const text = msg.text();
+    // Printed either way; only the page's own errors reach the assertion.
+    if (RESOURCE_LOAD_NOISE.some((noise) => noise.test(text))) {
+      console.log(`  [page error, ignored as resource-load noise] ${text}`);
+      return;
+    }
+    record(text);
   });
+  // console.error is not the only way the page can fail. An uncaught exception in
+  // the bundle never reaches the console at all, and a bundle that throws on boot
+  // is exactly the breakage only this layer can see.
+  //
+  // The stack, not just the message: an uncaught exception is often the only signal
+  // there is, and in a 700 KB minified bundle the message alone rarely says where.
+  // The console entries already arrive with their stack attached — the SDK logs the
+  // error's `stack` — so both kinds of entry keep the same shape here, and the
+  // allowlist patterns already tolerate the frames.
+  page.on('pageerror', (error) => record(error.stack || error.message));
+});
+
+// Printing was the whole of it before: every run logged the Piano errors and no
+// run failed on them, so a genuinely new SDK error would have ridden along in the
+// same log. Anything outside the allowlist now fails the test that produced it.
+test.afterEach(async ({ page }) => {
+  // Console and pageerror events are delivered asynchronously, so one raised in the
+  // closing moments of a test can still be in the pipe when this hook runs. A round
+  // trip to the page flushes them. Swallowing its own failure is deliberate: a page
+  // that has crashed or closed already failed the test, and rethrowing here would
+  // replace that report with a less useful one.
+  await page.evaluate(() => {}).catch(() => {});
+
+  const unexpected = pageErrors.filter(
+    (text) => !ALLOWED_PAGE_ERRORS.some((allowed) => allowed.test(text)));
+  // The text is the finding, so the message carries it: a bare `[]` mismatch would
+  // send the reader back to the log this assertion replaced.
+  expect(unexpected, `page errors outside the allowlist:\n${unexpected.join('\n\n')}`)
+    .toEqual([]);
 });
 
 async function waitForSettings(page) {
@@ -176,10 +260,19 @@ test('Publishers: the SDK re-sends a consent default the template already set', 
   // sendDefaultIfNeeded(), in tcf-cmp-client/src/google-consent-mode.ts, decides a
   // default is needed by scanning the dataLayer for a gtag-style ['consent','default']
   // entry. GTM's setDefaultConsentState never writes one — see gtagConsentCalls above
-  // — so the scan always comes up empty and the SDK sends its own on top. The correct
-  // count is 0: by the time the SDK boots the template has already set the defaults
-  // this tag is configured with, and a second global default overrides them.
-  test.fail(true, "sendDefaultIfNeeded only scans the dataLayer, which GTM's consent API never writes to: TCF SDK re-sends consent default over the template's — tracked as an SDK ask");
+  // — so the scan always comes up empty and the SDK sends its own on top.
+  //
+  // Asserted as 1 because that is what happens, in the same idiom as the Brands
+  // round-trip test below. The CORRECT count is 0: by the time the SDK boots, the
+  // template has already set the defaults this tag is configured with, and a second
+  // global all-denied default overrides them. Tracked as an SDK ask in ENG-13518 —
+  // when that ships this assertion fails, and the fix is to change the 1 to a 0 in
+  // the same commit that records why.
+  //
+  // Deliberately NOT test.fail(): with an expected status of "failed", a failure in
+  // any hook counts as the expected outcome too, so the page-error assertion in
+  // afterEach would be inert on this test and a new error on the TCF path would stay
+  // green. The count below is the only thing this test is allowed to be lenient about.
 
   await page.goto(PUBLISHERS);
   await waitForSettings(page);
@@ -190,7 +283,7 @@ test('Publishers: the SDK re-sends a consent default the template already set', 
 
   const defaults = await gtagConsentCalls(page, 'default');
   // The payload, not just the count: which types were denied is the whole story.
-  expect(defaults.length, `gtag consent defaults in dataLayer: ${JSON.stringify(defaults)}`).toBe(0);
+  expect(defaults.length, `gtag consent defaults in dataLayer: ${JSON.stringify(defaults)}`).toBe(1);
 });
 
 // The cookie the SDK writes and the template reads back. Parsed rather than

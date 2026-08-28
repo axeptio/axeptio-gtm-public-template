@@ -48,8 +48,12 @@ also the only place the two halves can be counted against each other, which is h
 the **double consent default** stopped being a suspicion: it counts the
 `gtag('consent', …)` calls the SDK pushes into the dataLayer on top of the ones the
 template already made through GTM's API, and the TCF build sends a second, global
-all-denied default over the template's. That check is marked `test.fail`, so it stays
-green today and turns red the day the SDK stops doing it.
+all-denied default over the template's. That check asserts the count it observes
+today — one — rather than the zero it should be, with the SDK ask (ENG-13518) named
+beside it, so it stays green today and turns red the day the SDK stops doing it.
+Deliberately not `test.fail`: an expected-failure test swallows hook failures as
+expected too, which would make the page-error assertion inert on exactly the test
+most likely to see a new SDK error.
 
 A defect that reaches production has, by definition, escaped all five. When that
 happens, add the check to the cheapest layer that could have caught it.
