@@ -268,6 +268,24 @@ Two things to get right either way:
 If **Cookies Version** is set, it applies to whichever project loads — leave it empty, or make
 sure the version name exists in both.
 
+## Troubleshooting
+
+**Google tags report consent as denied (`gcs=G100`) although the visitor accepted.** A Consent
+Mode `default` of `denied` is only lifted by a `consent update`, and the Axeptio SDK sends that
+update from the `$$googleConsentMode` block stored in the visitor's `axeptio_cookies`. No block,
+no update. That happens when Consent Mode is off on the Axeptio project, or when the stored
+consent predates it (or was written by another configuration, metadata prefix or cookie-domain
+scope). This tag's early replay reads the same block, so it cannot lift the state either — but
+with **Google Consent Mode v2** ticked it logs the reason in Preview:
+
+```text
+Axeptio GTM tag: consent cookie has no Google Consent Mode block (Consent Mode is off in the Axeptio project, or the consent predates it); early consent skipped
+```
+
+Enable Consent Mode on the project, send the `consent update` from your own tags, or ask those
+visitors to consent again. Worked example and checklist:
+[issue #120](https://github.com/axeptio/axeptio-gtm-public-template/issues/120).
+
 ## Related templates
 
 | Template | Purpose |
