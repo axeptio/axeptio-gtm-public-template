@@ -51,7 +51,7 @@ ___TEMPLATE_PARAMETERS___
         "type": "NON_EMPTY"
       }
     ],
-    "help": "Enter your Project ID. You can find it in the settings menu of your axeptio project. You can also select a GTM variable here, for example to serve a different project per country."
+    "help": "Enter your Project ID. You can find it in the settings menu of your axeptio project. A GTM variable can be selected here. To serve a different project per country, fill the Per-region projects table below rather than resolving this field from a lookup."
   },
   {
     "type": "SELECT",
@@ -70,7 +70,7 @@ ___TEMPLATE_PARAMETERS___
     ],
     "simpleValueType": true,
     "defaultValue": "brands",
-    "help": "Which Axeptio product this Project ID belongs to. Brands loads the standard CMP, Publishers loads the TCF build — they are different SDKs, so this must match the project. A GTM variable can be selected here, which lets the product follow the visitor\u0027s country; pair it with a variable Project ID resolved from the same lookup."
+    "help": "Which Axeptio product this Project ID belongs to. Brands loads the standard CMP, Publishers loads the TCF build — they are different SDKs, so this must match the project. A GTM variable can be selected here. To follow the visitor\u0027s country, fill the Per-region projects table below, which keeps the product and the Project ID together."
   },
   {
     "type": "TEXT",
@@ -78,6 +78,99 @@ ___TEMPLATE_PARAMETERS___
     "displayName": "Cookies Version",
     "simpleValueType": true,
     "help": "String identifier of the version of Cookie configuration that should be loaded. If this parameter is omitted, then it\u0027s the \"pages\" property in the configuration that gets parsed in case of multiple cookies configurations."
+  },
+  {
+    "type": "GROUP",
+    "name": "regionProjectsGroup",
+    "displayName": "Per-region projects",
+    "groupStyle": "ZIPPY_CLOSED",
+    "subParams": [
+      {
+        "type": "TEXT",
+        "name": "visitorCountry",
+        "displayName": "Visitor country (GTM variable)",
+        "simpleValueType": true,
+        "help": "A variable that resolves to the visitor\u0027s ISO 3166-1 alpha-2 country (FR) or ISO 3166-2 subdivision (US-CA), for example from a CDN or server-side geolocation header. Leave empty to always use the Project ID and product above."
+      },
+      {
+        "type": "PARAM_TABLE",
+        "name": "regionProjects",
+        "displayName": "Projects by region",
+        "paramTableColumns": [
+          {
+            "param": {
+              "type": "TEXT",
+              "name": "regions",
+              "displayName": "Regions",
+              "simpleValueType": true,
+              "valueValidators": [
+                {
+                  "type": "NON_EMPTY"
+                }
+              ],
+              "help": "Comma-separated codes this row applies to: ISO 3166-1 alpha-2 countries (FR) or ISO 3166-2 subdivisions (US-CA). A country code also matches its subdivisions, so FR covers FR-IDF; a row naming the subdivision exactly wins over the country row."
+            },
+            "isUnique": true
+          },
+          {
+            "param": {
+              "type": "TEXT",
+              "name": "id",
+              "displayName": "Project ID",
+              "simpleValueType": true,
+              "valueValidators": [
+                {
+                  "type": "REGEX",
+                  "args": [
+                    "^([0-9a-fA-F]{24}|\\{\\{.+\\}\\})$"
+                  ],
+                  "enablingConditions": [],
+                  "errorMessage": "Must be a valid 24-character ID or a GTM variable"
+                },
+                {
+                  "type": "NON_EMPTY"
+                }
+              ],
+              "help": "The Axeptio Project ID to load in these regions."
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "SELECT",
+              "name": "product",
+              "displayName": "Axeptio product",
+              "macrosInSelect": true,
+              "selectItems": [
+                {
+                  "value": "brands",
+                  "displayValue": "Brands (standard CMP)"
+                },
+                {
+                  "value": "publishers",
+                  "displayValue": "Publishers (TCF)"
+                }
+              ],
+              "simpleValueType": true,
+              "defaultValue": "brands",
+              "help": "Which Axeptio product this row\u0027s Project ID belongs to. Brands and Publishers are different SDKs, so this must match the project."
+            },
+            "isUnique": false
+          },
+          {
+            "param": {
+              "type": "TEXT",
+              "name": "cookiesVersion",
+              "displayName": "Cookies Version",
+              "simpleValueType": true,
+              "help": "Optional. The cookie configuration this row\u0027s project loads, and the name a stored consent has to carry to be replayed for it. Every Axeptio project on a domain writes the same cookie, so when a row matches, early consent is applied only if the cookie was written under this configuration name. Leave empty to use the Cookies Version above."
+            },
+            "isUnique": false
+          }
+        ],
+        "help": "Serve a different Axeptio project - and a different product - per visitor country. The first row whose Regions list the visitor\u0027s exact code wins; if none does, the first row listing the country part of a subdivision wins. That row replaces the Project ID and Axeptio product above, and the Cookies Version too when it sets one. With no matching row, or no Visitor country, the fields above are used unchanged. GTM Preview names the row that matched. The Consent cookie metadata prefix in Cookie settings is shared by every row, so every project listed here must use the same prefix. Consent is stored per project, so a visitor whose country changes is asked again."
+      }
+    ]
   },
   {
     "type": "GROUP",
@@ -738,8 +831,231 @@ if (proxyBaseUrl !== undefined && postConsentUrlSet) {
   logToConsole('Axeptio GTM tag: Server-side URL is set, so consent is posted there rather than through the proxy');
 }
 
+// Brands and Publishers are different SDK builds, and the product can arrive from
+// three places - the field, a per-region row below, or a GTM variable standing in
+// for either - so it is normalised in one place instead of once per path. Anything
+// unrecognised loads Brands, which is the safe build, but never in silence:
+// serving a non-TCF banner where TCF was intended is a compliance problem, not a
+// cosmetic one. Truthiness is not the test, because a lookup table that found no
+// match yields an empty string and that is the likeliest way to land here. Only
+// undefined is quiet - a tag saved before the field existed, or a row whose
+// product column was never set.
+const normaliseProduct = (value) => {
+  if (value === 'publishers') {
+    return 'publishers';
+  }
+  if (value !== undefined && value !== 'brands') {
+    logToConsole('Axeptio GTM tag: unrecognised product "' + value + '", loading Brands.');
+  }
+  return 'brands';
+};
+
+// Region codes are trimmed and uppercased on both sides of every comparison: 'fr'
+// out of a geolocation header and ' FR ' out of a spreadsheet are the same
+// country, and a case-sensitive miss would be invisible. Shared with the Consent
+// Mode Region column below, whose codes Google also documents in uppercase.
+const splitRegionCodes = (value) => value.split(',')
+    .map(entry => entry.trim().toUpperCase())
+    .filter(entry => entry.length !== 0);
+
+// An Axeptio Project ID is 24 hex characters. The editor's REGEX validator only
+// guards what is typed into the field or the cell; a GTM variable is validated as
+// the literal '{{My Variable}}' and whatever it resolves to at run time is never
+// checked again. An id that is not one loads no configuration and shows no banner,
+// which is the failure the old lookup-variable recipe warned about. Checked
+// character by character, the sandbox having no RegExp.
+const isProjectId = (value) => {
+  if (typeof value !== 'string' || value.length !== 24) {
+    return false;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value.charAt(index);
+    const isDigit = character >= '0' && character <= '9';
+    const isLower = character >= 'a' && character <= 'f';
+    const isUpper = character >= 'A' && character <= 'F';
+    if (!isDigit && !isLower && !isUpper) {
+      return false;
+    }
+  }
+  return true;
+};
+
+// Brands and Publishers are two different projects on two different SDKs, and
+// Axeptio's own geolocated display only chooses between configurations INSIDE one
+// product - there is no path from Brands to Publishers once the SDK has booted. So
+// the choice has to be made here, in the container, before anything loads. The
+// Projects by region table does it in the tag: one row per set of regions, each
+// naming the Project ID, the product, and optionally the cookie configuration to
+// use there.
+//
+// The country cannot come from the sandbox: a web template has no geolocation API
+// at all. It comes from a GTM variable the container already has - a CDN or
+// server-side geolocation header - which is exactly what the two-lookup-variable
+// recipe this table replaces relied on. What the table adds is that the id, the
+// product and the configuration name can no longer drift apart, and that Preview
+// can name the row that won.
+//
+// Resolved once, here, and used everywhere below: the settings object, both
+// consent cookie guards, and the SDK URL. data.id, data.product and
+// data.cookiesVersion are read only on these three lines.
+// A configuration name reaches this tag from the field or from a row cell, and
+// either can arrive with whitespace around it - typed, pasted, or produced by a
+// variable built from a header. Untrimmed, the name compared against the one the
+// SDK actually wrote never matches, so the replay is skipped for a cookie that is
+// this project's, and the padded value is what the SDK is told to load as well.
+// Trimmed once, here, so the guard below and the settings object always see the
+// same string. A value that trims to nothing is not a name at all and stays the
+// not-set state, which is what keeps a blank field lenient. Anything that is not
+// text is passed through untouched: only a string can be trimmed, and the SDK has
+// always received whatever the variable produced.
+const normaliseCookiesVersion = (value) => (typeof value === 'string') ? value.trim() : value;
+
+let projectId = data.id;
+let product = normaliseProduct(data.product);
+let cookiesVersion = normaliseCookiesVersion(data.cookiesVersion);
+// Whether a row took the project over, which is what makes the cookie guard below
+// strict: a tag that knowingly serves several projects on one domain cannot fall
+// back on "no configuration name, so probably mine".
+let regionRowMatched = false;
+
+// GTM sends nothing at all for an empty PARAM_TABLE, so a tag that never opened
+// this group arrives with data.regionProjects undefined; a hand-edited container
+// export can send something that is not a list at all. Same array-like test as the
+// consent default rows, and for the same reason: iterating either would throw
+// before injectScript and the visitor would get no CMP whatsoever.
+const rawRegionRows = data.regionProjects;
+const regionRows = (!!rawRegionRows && typeof rawRegionRows === 'object' &&
+  typeof rawRegionRows.length === 'number') ? rawRegionRows : [];
+
+// The Regions column is isUnique, but that compares whole cells: 'FR, DE' and 'FR'
+// are different strings, both save, and the second one can then never apply with
+// nothing anywhere to say so. Reported once the winner is known, in a pass of its
+// own that says nothing else - everything else worth reporting about a row was
+// reported while the row was being considered.
+const reportOverlappingRows = (winnerIndex, wantedCode) => {
+  for (let index = 0; index < regionRows.length; index += 1) {
+    const row = regionRows[index];
+    if (index === winnerIndex || !row || typeof row !== 'object' ||
+        typeof row.regions !== 'string' || !isProjectId(row.id)) {
+      continue;
+    }
+    if (splitRegionCodes(row.regions).indexOf(wantedCode) !== -1) {
+      logToConsole('Axeptio GTM tag: per-region row ' + (index + 1) + ' also matches ' +
+        wantedCode + '; row ' + (winnerIndex + 1) + ' wins');
+    }
+  }
+};
+
+if (regionRows.length > 0) {
+  // The field is TEXT, so the variable behind it can resolve to a number, an object,
+  // or - much the most likely - an empty string, which is what a geolocation header
+  // that was not sent leaves behind. The top-level project is the right fallback in
+  // every case, but falling back in silence would leave a publisher who configured
+  // the whole table unable to tell that from a country that simply has no row. The
+  // two reasons are kept apart because they have different fixes: empty means the
+  // header did not arrive, not text means the variable behind the field is wrong.
+  const countryValue = data.visitorCountry;
+  const countryIsText = typeof countryValue === 'string';
+  if (!countryIsText || countryValue.trim() === '') {
+    if (!countryIsText && countryValue !== undefined && countryValue !== null) {
+      logToConsole('Axeptio GTM tag: per-region projects are configured but Visitor country is not text; using the top-level project');
+    } else {
+      logToConsole('Axeptio GTM tag: per-region projects are configured but Visitor country is empty; using the top-level project');
+    }
+  } else {
+    const country = countryValue.trim().toUpperCase();
+    // A subdivision falls back to its country: a row listing US covers a visitor in
+    // US-CA, which is how a publisher writes "the United States" without listing
+    // fifty codes. An exact row still wins wherever it sits in the table, so a
+    // US-CA row can carve one state out of a US row above it. Both candidates come
+    // out of one pass, and a row's Project ID is validated only when the row could
+    // actually win: one broken row must not narrate every visitor's page view in
+    // every country it does not cover.
+    const dashIndex = country.indexOf('-');
+    const countryPart = (dashIndex > 0) ? country.substring(0, dashIndex) : '';
+    let exactIndex = -1;
+    let broaderIndex = -1;
+    for (let index = 0; index < regionRows.length; index += 1) {
+      const row = regionRows[index];
+      if (!row || typeof row !== 'object') {
+        continue;
+      }
+      // The cell is TEXT, so it too can hold a GTM variable that resolved to a
+      // number or an object. split() would throw on that, before injectScript, and
+      // the visitor would get no CMP at all - the same failure the Consent Mode
+      // Region column guards against, named the same way rather than swallowed.
+      if (typeof row.regions !== 'string') {
+        logToConsole('Axeptio GTM tag: per-region row ' + (index + 1) + ': Regions is not text; row skipped');
+        continue;
+      }
+      const codes = splitRegionCodes(row.regions);
+      const isExact = codes.indexOf(country) !== -1;
+      const isBroader = countryPart !== '' && codes.indexOf(countryPart) !== -1;
+      // Nothing left to learn from this row: an exact winner is already found, or
+      // the row does not apply to this visitor at all, or it is a country-level
+      // match and one of those is already held. Its Project ID stays unexamined.
+      if (exactIndex !== -1 || (!isExact && !isBroader) || (!isExact && broaderIndex !== -1)) {
+        continue;
+      }
+      if (!isProjectId(row.id)) {
+        logToConsole('Axeptio GTM tag: per-region row ' + (index + 1) + ' has an invalid Project ID; skipped');
+        continue;
+      }
+      if (isExact) {
+        exactIndex = index;
+      } else {
+        broaderIndex = index;
+      }
+    }
+    const matchedIndex = (exactIndex !== -1) ? exactIndex : broaderIndex;
+    if (matchedIndex === -1) {
+      logToConsole('Axeptio GTM tag: no per-region row for ' + country + '; using the top-level project');
+    } else {
+      const matchedRow = regionRows[matchedIndex];
+      projectId = matchedRow.id;
+      product = normaliseProduct(matchedRow.product);
+      // Every Axeptio project on a domain writes the SAME cookie name, and the only
+      // thing in the payload that tells them apart is the configuration name. So a
+      // row that names its own Cookies Version does two jobs: the SDK loads that
+      // configuration, and the replay below can prove a stored consent belongs to
+      // this project rather than to the one the visitor saw last week. An empty
+      // cell keeps the Cookies Version from the field above, which is right when
+      // every project shares a configuration name - and when neither is set, the
+      // replay is skipped rather than guessed at.
+      const rowCookiesVersion = normaliseCookiesVersion(matchedRow.cookiesVersion);
+      if (typeof rowCookiesVersion === 'string' && rowCookiesVersion !== '') {
+        cookiesVersion = rowCookiesVersion;
+      }
+      regionRowMatched = true;
+      logToConsole('Axeptio GTM tag: visitor country ' + country + ' matched per-region row ' +
+        (matchedIndex + 1) + '; loading project ' + projectId + ' (' + product + ')');
+      reportOverlappingRows(matchedIndex, (exactIndex !== -1) ? country : countryPart);
+    }
+  }
+}
+
+// Blank is the not-set state for a configuration name, whether it came from the
+// field or from a row cell. Already trimmed by normaliseCookiesVersion, so a cell
+// holding nothing but spaces is as unset as an empty one.
+const cookiesVersionSet = (typeof cookiesVersion === 'string') ?
+  cookiesVersion !== '' : !!cookiesVersion;
+
+// The same run-time check the rows get, for the field. A project id that is not one
+// loads no configuration and shows no banner, with nothing in Preview to say why.
+// Named, not acted on: the SDK owns that failure, and aborting here would turn a
+// broken banner into no tag at all, which is worse and harder to diagnose. A
+// matched row's id was validated above, so this only ever speaks about the field.
+// Absent or blank stays quiet - that is a tag mid-configuration, and the field's
+// NON_EMPTY validator refuses to save one.
+const projectIdBlank = projectId === undefined || projectId === null ||
+  (typeof projectId === 'string' && projectId.trim() === '');
+if (!projectIdBlank && !isProjectId(projectId)) {
+  logToConsole('Axeptio GTM tag: Project ID is not a 24-character id; the SDK will find no configuration');
+}
+
+
 if(data.isComoEnabled){
-  
+
   // The Region column is TEXT, but TEXT accepts a GTM variable, and a lookup that
   // misfires can hand over a number or an object. Calling split on that throws
   // before injectScript — no default, no SDK, a green tag and no banner. So anything
@@ -752,9 +1068,11 @@ if(data.isComoEnabled){
     }
     return [];
   }
-  return input.split(',')
-      .map(entry => entry.trim())
-      .filter(entry => entry.length !== 0);
+  // Uppercased by splitRegionCodes, which the per-region table shares: Google
+  // documents its consent regions as uppercase ISO codes, and a lowercase 'fr'
+  // typed into a cell would otherwise reach setDefaultConsentState as a region
+  // that matches nobody - a default silently applied to no one.
+  return splitRegionCodes(input);
 };
 
 // The Google consent types this tag is allowed to speak about, used both by the
@@ -923,6 +1241,9 @@ const main = (data) => {
   // payload has no such key. So on a Publishers tag that key can only have come
   // from a different project. This is the guard that does the work, because
   // Cookies Version is optional and most tags leave it empty.
+  // "A Publishers tag" means the product this run resolved to, so a visitor sent
+  // to a Publishers project by a per-region row is guarded exactly as one whose
+  // Axeptio product field says Publishers.
   // It is coupled to the TCF build: if that ever starts writing the key,
   // Publishers silently loses the early update (never applies a wrong one).
   // Same class of assumption as the classic-script coupling documented below.
@@ -938,8 +1259,16 @@ const main = (data) => {
   // an unknown name, which is what every shape but the object did before.
   // Compared only when BOTH sides are non-empty: a strict match would disable
   // early consent for every tag that leaves the field blank, which is the
-  // default. Residual gap: two Brands projects where either tag leaves it blank
-  // are still indistinguishable.
+  // default.
+  //
+  // Unless a per-region row matched. Then this tag is knowingly one of several
+  // projects on the domain, all writing that same cookie name, and the lenient
+  // rule becomes a leak rather than a residual gap: a Brands row behind a Brands
+  // field, neither naming a configuration, would replay project A's stored
+  // Consent Mode state under project B and log it as a success. So for that tag
+  // the rule is strict - the names must be equal - and when there is no effective
+  // Cookies Version at all the replay is skipped and said out loud, because
+  // nothing left in the payload can attribute the consent to either project.
   //
   // All three keys are built from metadataPrefix, because the project - not this
   // template - decides what they are called.
@@ -957,7 +1286,7 @@ const main = (data) => {
   // logToConsole only reaches a debug environment, so the reasons appear in
   // Preview and never in production. Every branch still falls through to the SDK
   // injection: these lines diagnose, they never change the outcome.
-  const cookieValues = (data.product === 'publishers') ? undefined : getCookieValues('axeptio_cookies');
+  const cookieValues = (product === 'publishers') ? undefined : getCookieValues('axeptio_cookies');
   if (cookieValues && cookieValues.length > 0) {
     const raw = cookieValues[0];
     let parsed = JSON.parse(raw);
@@ -973,7 +1302,9 @@ const main = (data) => {
     } else if (!!cookieConfig && typeof cookieConfig === 'object') {
       cookieVersionName = cookieConfig.name;
     }
-    const configMismatch = !!data.cookiesVersion && !!cookieVersionName && cookieVersionName !== data.cookiesVersion;
+    const configMismatch = regionRowMatched ?
+      (cookieVersionName !== cookiesVersion) :
+      (cookiesVersionSet && !!cookieVersionName && cookieVersionName !== cookiesVersion);
     if (!readable) {
       // The Brands SDK lz-string-compresses the cookie when compressUserCookie is
       // on - always when it is 'forced', otherwise once the payload passes ~3 KB
@@ -981,8 +1312,19 @@ const main = (data) => {
       // the replay genuinely cannot happen here; the publisher should at least
       // hear why instead of wondering where the head start went.
       logToConsole('Axeptio GTM tag: consent cookie present but not readable (compressed by compressUserCookie, or corrupted); early consent skipped');
+    } else if (regionRowMatched && !cookiesVersionSet) {
+      // A row took the project over and nothing names a configuration, so the
+      // payload cannot be attributed: every project on this domain writes this
+      // cookie and any of them could have written this one.
+      logToConsole('Axeptio GTM tag: per-region row matched but no Cookies Version is set; the cookie cannot be attributed to this project, early consent skipped');
     } else if (configMismatch) {
-      logToConsole('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "' + cookieVersionName + '"');
+      if (cookieVersionName === undefined) {
+        // Strict mode only: the cookie carries no configuration name at all, which
+        // the lenient rule would have let through.
+        logToConsole('Axeptio GTM tag: skipping early consent, the cookie carries no configuration name and a per-region row is in force');
+      } else {
+        logToConsole('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "' + cookieVersionName + '"');
+      }
     } else if (!parsed[completedKey]) {
       // Absent, not false: a visitor part-way through the banner has completed
       // false and that is normal, so it stays quiet. Absent, while some other key
@@ -1052,8 +1394,8 @@ main(data);
 }
 
 const axeptioSettings = {
-  clientId: data.id,
-  cookiesVersion: data.cookiesVersion,
+  clientId: projectId,
+  cookiesVersion: cookiesVersion,
   dataLayerName: data.dataLayerName,
   userCookiesDuration: makeNumber(data.cookiesDuration),
   userCookiesDomain: data.cookiesDomain,
@@ -1203,8 +1545,11 @@ if (additionalSettings && typeof additionalSettings.length === 'number') {
 setInWindow('axeptioSettings', axeptioSettings, true);
 
 // Brands and Publishers are different SDK builds, so the URL has to follow the
-// product the Project ID belongs to. Anything other than 'publishers' loads
-// Brands, which keeps tags saved before this field existed working unchanged.
+// product the Project ID belongs to - the resolved one, which is the per-region
+// row's product when a row matched and the field's otherwise. normaliseProduct
+// has already reduced it to exactly 'brands' or 'publishers', so anything
+// unrecognised has been named and turned into Brands, which keeps tags saved
+// before this field existed working unchanged.
 //
 // Both URLs must stay loadable as a CLASSIC script. injectScript() creates a
 // plain <script> and sandboxed JS cannot set type="module", so an ES-module
@@ -1217,22 +1562,9 @@ setInWindow('axeptioSettings', axeptioSettings, true);
 // Ordering is also load-bearing: a classic script is not deferred, so the SDK
 // reads window.axeptioSettings as it boots. setInWindow() above runs before
 // this injection, which is what makes that safe.
-const sdkUrl = data.product === 'publishers' ?
+const sdkUrl = product === 'publishers' ?
   'https://static.axept.io/tcf/sdk.js' :
   'https://static.axept.io/sdk.js';
-
-// The field accepts a GTM variable, so a geolocation lookup that misfires can
-// hand us a value we don't recognise. Falling back to Brands is the safe load,
-// but silently serving a non-TCF banner where TCF was intended is a compliance
-// problem — make it visible in Preview rather than letting it pass unnoticed.
-//
-// Compared against undefined rather than tested for truthiness: a lookup table
-// with no match yields an empty string, which is the single most likely way to
-// land here and would be skipped by a truthy check. Only undefined — a tag
-// saved before this field existed — is legitimately silent.
-if (data.product !== undefined && data.product !== 'brands' && data.product !== 'publishers') {
-  logToConsole('Axeptio GTM tag: unrecognised product "' + data.product + '", loading Brands.');
-}
 
 if (queryPermission('inject_script', sdkUrl)) {
   injectScript(sdkUrl, data.gtmOnSuccess, data.gtmOnFailure);
@@ -3045,6 +3377,347 @@ scenarios:
 
     assertThat(settings.proxyBaseUrl).isUndefined();
     assertApi('logToConsole').wasNotCalled();
+- name: A per-region row overrides the project and the product
+  code: |-
+    // The whole point of the table: Brands and Publishers are different projects on
+    // different SDKs, so a row that selects Publishers has to move both the client id
+    // and the bundle, not one of the two.
+    let injected;
+    let settings;
+    mock('injectScript', (url) => { injected = url; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      visitorCountry: 'FR',
+      regionProjects: [{regions: 'FR, DE', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'}]
+    });
+
+    assertThat(settings.clientId).isEqualTo('aaaaaaaaaaaaaaaaaaaaaaaa');
+    assertThat(injected).isEqualTo('https://static.axept.io/tcf/sdk.js');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: visitor country FR matched per-region row 1; loading project aaaaaaaaaaaaaaaaaaaaaaaa (publishers)');
+- name: A subdivision falls back to its country row
+  code: |-
+    // A row listing US is how a publisher writes "the United States" without typing
+    // fifty subdivision codes, so a visitor in US-CA has to find it.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: 'US-CA',
+      regionProjects: [{regions: 'US', id: 'bbbbbbbbbbbbbbbbbbbbbbbb', product: 'brands'}]
+    });
+
+    assertThat(settings.clientId).isEqualTo('bbbbbbbbbbbbbbbbbbbbbbbb');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: visitor country US-CA matched per-region row 1; loading project bbbbbbbbbbbbbbbbbbbbbbbb (brands)');
+- name: An exact subdivision row wins over its country row
+  code: |-
+    // The country fallback must not swallow a row that names the subdivision, whatever
+    // order the two are in - that is how one state is carved out of a country row.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: 'US-CA',
+      regionProjects: [
+        {regions: 'US', id: 'bbbbbbbbbbbbbbbbbbbbbbbb', product: 'brands'},
+        {regions: 'US-CA', id: 'cccccccccccccccccccccccc', product: 'brands'}
+      ]
+    });
+
+    assertThat(settings.clientId).isEqualTo('cccccccccccccccccccccccc');
+- name: A country with no per-region row keeps the top-level project
+  code: |-
+    let injected;
+    let settings;
+    mock('injectScript', (url) => { injected = url; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      visitorCountry: 'ES',
+      regionProjects: [{regions: 'FR', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'}]
+    });
+
+    assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
+    assertThat(injected).isEqualTo('https://static.axept.io/sdk.js');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: no per-region row for ES; using the top-level project');
+- name: Per-region rows with an empty visitor country keep the top-level project
+  code: |-
+    // An empty string is what a geolocation header that was not sent leaves behind,
+    // and it is the single most likely way a configured table does nothing at all.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: '',
+      regionProjects: [{regions: 'FR', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'}]
+    });
+
+    assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: per-region projects are configured but Visitor country is empty; using the top-level project');
+- name: No per-region rows leaves the tag silent
+  code: |-
+    // Every tag saved before this table existed sends no rows at all, and a country
+    // variable on its own must not start narrating either.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', visitorCountry: 'FR'});
+
+    assertThat(settings.clientId).isEqualTo('6a22da4da7d365c1e246783d');
+    assertApi('logToConsole').wasNotCalled();
+- name: A lowercase visitor country still matches
+  code: |-
+    // A header says 'fr' and a spreadsheet cell says ' FR '. Both sides are trimmed
+    // and uppercased, because a case-sensitive miss would be invisible.
+    let injected;
+    let settings;
+    mock('injectScript', (url) => { injected = url; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: ' fr ',
+      regionProjects: [{regions: ' fr , de ', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'}]
+    });
+
+    assertThat(settings.clientId).isEqualTo('aaaaaaaaaaaaaaaaaaaaaaaa');
+    assertThat(injected).isEqualTo('https://static.axept.io/tcf/sdk.js');
+- name: A per-region row with an invalid Project ID is skipped
+  code: |-
+    // The editor's validator only guards what is typed in; a cell holding a GTM
+    // variable is whatever it resolved to. Loading a non-project would show no banner
+    // at all, so the row is skipped with a reason and the next one still gets its turn.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: 'FR',
+      regionProjects: [
+        {regions: 'FR', id: 'not-a-project-id', product: 'publishers'},
+        {regions: 'FR', id: 'bbbbbbbbbbbbbbbbbbbbbbbb', product: 'brands'}
+      ]
+    });
+
+    assertThat(settings.clientId).isEqualTo('bbbbbbbbbbbbbbbbbbbbbbbb');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: per-region row 1 has an invalid Project ID; skipped');
+- name: A per-region publishers row never replays the shared cookie
+  code: |-
+    // Guard 1 has to read the product this run resolved to, not the field: every
+    // project on a domain writes the same cookie name, so a visitor sent to a
+    // Publishers project by a row would otherwise inherit the Brands project's
+    // Consent Mode state.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let injected;
+    mock('getCookieValues', () => [cookie]);
+    mock('injectScript', (url) => { injected = url; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      visitorCountry: 'FR',
+      regionProjects: [{regions: 'FR', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'}]
+    });
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertThat(injected).isEqualTo('https://static.axept.io/tcf/sdk.js');
+- name: A matched row with no Cookies Version skips early consent
+  code: |-
+    // Every Axeptio project on a domain writes the same cookie name. With a row in
+    // force and no configuration name on either side, the payload cannot be
+    // attributed, and replaying it would apply project A's stored choices under
+    // project B and report it in Preview as a success.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      id: '6a22da4da7d365c1e246783d',
+      product: 'brands',
+      visitorCountry: 'FR',
+      regionProjects: [{regions: 'FR', id: 'bbbbbbbbbbbbbbbbbbbbbbbb', product: 'brands'}]
+    });
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('injectScript').wasCalled();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: per-region row matched but no Cookies Version is set; the cookie cannot be attributed to this project, early consent skipped');
+- name: A matched row skips a cookie from another configuration
+  code: |-
+    // The row names its own configuration, so the guard is strict: this cookie was
+    // written under the top-level project and is not this row's to replay.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'brands-base', identifier: 'aaaaaaaaaaaaaaaaaaaaaaaa'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    mock('getCookieValues', () => [cookie]);
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      id: '6a22da4da7d365c1e246783d',
+      cookiesVersion: 'brands-base',
+      visitorCountry: 'FR',
+      regionProjects: [{regions: 'FR', id: 'bbbbbbbbbbbbbbbbbbbbbbbb', product: 'brands', cookiesVersion: 'fr-base'}]
+    });
+
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: skipping early consent, cookie belongs to configuration "brands-base"');
+- name: A matched row replays a cookie carrying its own Cookies Version
+  code: |-
+    // The other side of the guard: same table, and now the cookie really was written
+    // by this row's project. The row's Cookies Version is also what the SDK is told
+    // to load, so the two can never disagree.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'fr-base', identifier: 'aaaaaaaaaaaaaaaaaaaaaaaa'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      id: '6a22da4da7d365c1e246783d',
+      cookiesVersion: 'brands-base',
+      visitorCountry: 'FR',
+      regionProjects: [{regions: 'FR', id: 'bbbbbbbbbbbbbbbbbbbbbbbb', product: 'brands', cookiesVersion: 'fr-base'}]
+    });
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+    assertThat(settings.cookiesVersion).isEqualTo('fr-base');
+    assertThat(settings.clientId).isEqualTo('bbbbbbbbbbbbbbbbbbbbbbbb');
+- name: A per-region row whose Regions is not text is skipped
+  code: |-
+    // The cell is TEXT and so accepts a GTM variable; split() on a number would throw
+    // before injectScript, leaving a green tag and no CMP at all.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: 'FR',
+      regionProjects: [
+        {regions: 42, id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'},
+        {regions: 'FR', id: 'bbbbbbbbbbbbbbbbbbbbbbbb', product: 'brands'}
+      ]
+    });
+
+    assertThat(settings.clientId).isEqualTo('bbbbbbbbbbbbbbbbbbbbbbbb');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: per-region row 1: Regions is not text; row skipped');
+- name: A second row matching the same country is named
+  code: |-
+    // The Regions column is isUnique, but that compares whole cells: 'FR, DE' and 'FR'
+    // are different strings and both save. First wins, and Preview says which, rather
+    // than leaving a row that can never apply looking configured.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: 'FR',
+      regionProjects: [
+        {regions: 'FR, DE', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'brands'},
+        {regions: 'FR', id: 'cccccccccccccccccccccccc', product: 'publishers'}
+      ]
+    });
+
+    assertThat(settings.clientId).isEqualTo('aaaaaaaaaaaaaaaaaaaaaaaa');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: per-region row 2 also matches FR; row 1 wins');
+- name: A non text Visitor country says so rather than empty
+  code: |-
+    // A variable that resolved to a number is a different mistake from a geolocation
+    // header that did not arrive, and it has a different fix.
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      visitorCountry: 42,
+      regionProjects: [{regions: 'FR', id: 'aaaaaaaaaaaaaaaaaaaaaaaa', product: 'publishers'}]
+    });
+
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: per-region projects are configured but Visitor country is not text; using the top-level project');
+    assertApi('logToConsole').wasNotCalledWith('Axeptio GTM tag: per-region projects are configured but Visitor country is empty; using the top-level project');
+- name: A top-level Project ID that is not an id is named
+  code: |-
+    // The REGEX validator runs in the editor, on the literal text of the field; a GTM
+    // variable resolves at run time and is never checked again. The SDK owns this
+    // failure, so the tag still injects - it only says why no banner will appear.
+    runCode({id: 'nope'});
+
+    assertApi('injectScript').wasCalled();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: Project ID is not a 24-character id; the SDK will find no configuration');
+- name: Consent Mode regions are uppercased
+  code: |-
+    // Google documents its consent regions as uppercase ISO codes, so a lowercase
+    // cell would otherwise send a default that applies to nobody at all.
+    let state;
+    mock('setDefaultConsentState', (value) => { state = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [{region: 'fr, de', ad_storage: 'denied'}]});
+
+    assertThat(state.region).isEqualTo(['FR', 'DE']);
+- name: A padded Cookies Version is trimmed on both sides
+  code: |-
+    // The field is TEXT and accepts a GTM variable, so a trailing space is a slip
+    // rather than a configuration. Untrimmed it never equals the name the SDK wrote,
+    // so the guard skips a cookie that really is this project's - and the SDK is told
+    // to load a configuration name that does not exist.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'my-config', identifier: 'aaaaaaaaaaaaaaaaaaaaaaaa'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    let settings;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [],
+      id: '6a22da4da7d365c1e246783d',
+      cookiesVersion: '  my-config '
+    });
+
+    assertThat(settings.cookiesVersion).isEqualTo('my-config');
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
+- name: A whitespace only Cookies Version stays lenient
+  code: |-
+    // Spaces are not a configuration name, so the tag is in the same state as one
+    // that left the field empty: the cookie still applies rather than being skipped
+    // for a name nobody set.
+    const cookie = JSON.stringify({
+      '$$completed': true,
+      '$$cookiesVersion': {name: 'my-project-base', identifier: 'bbbbbbbbbbbbbbbbbbbbbbbb'},
+      '$$googleConsentMode': {ad_storage: 'granted'}
+    });
+    let states;
+    mock('getCookieValues', () => [cookie]);
+    mock('updateConsentState', (value) => { states = value; });
+
+    runCode({isComoEnabled: true, defaultSettings: [], cookiesVersion: '   '});
+
+    assertThat(states).isEqualTo({ad_storage: 'granted'});
 
 
 ___NOTES___
