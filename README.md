@@ -15,10 +15,10 @@
 The official [Axeptio](https://www.axept.io/) consent management tag for Google Tag Manager
 (web containers).
 
-The tag loads the Axeptio CMP on your site, applies your cookie configuration, and — when
-enabled — wires Axeptio's consent decisions into
+The tag loads the Axeptio CMP on your site, applies your cookie configuration, and wires
+Axeptio's consent decisions into
 [Google Consent Mode v2](https://support.axeptio.eu/articles/274002), so Google tags fire
-according to the visitor's choices.
+according to the visitor's choices. Consent Mode is on by default for new tags.
 
 **[▶ Axeptio CMP in the Community Template Gallery](https://tagmanager.google.com/gallery/#/owners/axeptio/templates/axeptio-gtm-public-template)**
 
@@ -29,7 +29,8 @@ In your GTM **web** container: **Templates → Tag Templates → Search Gallery*
 least the **Project ID**.
 
 Trigger it on **Consent Initialization — All Pages** so Consent Mode defaults are set before
-every other tag fires, not just before the CMP loads.
+every other tag fires, not just before the CMP loads. Consent Mode is on by default for new
+tags, so check that your Axeptio project has it enabled too.
 
 Step-by-step setup, screenshots and Consent Mode guidance live in the Help Center:
 
@@ -72,11 +73,15 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 
 | Field | What it does |
 | --- | --- |
-| Activate Google Consent Mode v2 | Master switch. Consent Mode is **off until you tick the box** — nothing below applies while it is unchecked. |
+| Activate Google Consent Mode v2 | Master switch, **on by default for new tags**. A new tag left with an empty Default Settings table therefore denies `analytics_storage`, `ad_storage`, `ad_user_data` and `ad_personalization` in every region and grants `security_storage`. Untick the box and nothing below applies. A tag you saved with the box unticked keeps it unticked — GTM stores the explicit value and never rewrites a saved tag when a template default changes. |
 | Default Settings | Per-region defaults for all seven consent types: `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`, `functionality_storage`, `personalization_storage`, `security_storage`. `security_storage` defaults to **Granted** (denying it breaks sign-in and fraud prevention); `functionality_storage` and `personalization_storage` default to **Not set**, which sends no default for them and so leaves Google's own default of granted — a Brands site only ever updates the four advertising and analytics types, so a denied default there would never be lifted. Leaving the table empty denies those four in every region and grants `security_storage` — it does not mean "no default". |
 | Wait for update (ms) | How long Google tags wait for the visitor's stored choice before using the defaults above. Defaults to `500`, which covers the replay from the consent cookie; raise it (2000 is common) if tags fire before the banner on a first visit. |
 | Redact Ads Data | Stops advertising cookies being set while `ad_storage` is denied. |
 | Pass through URL parameters | Preserves ad click information across pages when cookies are denied. |
+
+Consent Mode must also be enabled on the Axeptio project itself, in the
+[Axeptio back-office](https://support.axeptio.eu/articles/274002): without it the SDK never
+sends a consent update, and the denied defaults above stay in place for every Google tag.
 
 Whenever the tag skips the replay of a returning visitor's stored consent, or falls back on a
 setting it cannot use, it names the reason in GTM Preview — and only there, never in production.

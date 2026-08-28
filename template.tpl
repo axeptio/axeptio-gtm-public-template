@@ -22,7 +22,7 @@ ___INFO___
     "TAG_MANAGEMENT",
     "PERSONALIZATION"
   ],
-  "description": "Load the Axeptio consent management platform to collect and store visitor consent, with optional Google Consent Mode v2 support.",
+  "description": "Load the Axeptio consent management platform to collect and store visitor consent, and set Google Consent Mode v2 defaults before your other tags fire.",
   "containerContexts": [
     "WEB"
   ],
@@ -209,13 +209,14 @@ ___TEMPLATE_PARAMETERS___
     "type": "GROUP",
     "name": "googleSettings",
     "displayName": "Google Consent Mode v2",
-    "groupStyle": "ZIPPY_CLOSED",
+    "groupStyle": "ZIPPY_OPEN",
     "subParams": [
       {
         "type": "CHECKBOX",
         "name": "isComoEnabled",
         "checkboxText": "Activate Google Consent Mode v2",
         "simpleValueType": true,
+        "defaultValue": true,
         "help": "Sets Google Consent Mode defaults before your other tags and replays a returning visitor\u0027s stored choice. Trigger this tag on Consent Initialization - All Pages."
       },
       {
@@ -2021,7 +2022,19 @@ scenarios:
     assertApi('logToConsole').wasNotCalled();
 - name: Consent Mode off skips the consent APIs entirely
   code: |-
+    // isComoEnabled is ABSENT here, not false: a tag saved before the field existed.
+    // The checkbox now defaults to true, and GTM never backfills a new defaultValue
+    // into an already saved tag — so absent must keep meaning off.
     runCode({});
+
+    assertApi('setDefaultConsentState').wasNotCalled();
+    assertApi('updateConsentState').wasNotCalled();
+    assertApi('injectScript').wasCalled();
+- name: An explicitly unchecked Consent Mode stays off
+  code: |-
+    // GTM stores an unchecked checkbox as an explicit false, which must beat the
+    // defaultValue the same way an absent field does.
+    runCode({isComoEnabled: false});
 
     assertApi('setDefaultConsentState').wasNotCalled();
     assertApi('updateConsentState').wasNotCalled();

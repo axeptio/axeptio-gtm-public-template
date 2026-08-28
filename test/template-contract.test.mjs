@@ -126,3 +126,16 @@ test('catches a hex literal in the sandboxed JS', () => {
   const afterUrl = violationsAfter(replaceOnce('code === 160', "'https://h.example' === 0xA0 || code === 160"));
   assert.equal(matching(afterUrl, /hex literal 0xA0/).length, 1, afterUrl.join('\n'));
 });
+
+test('catches the Consent Mode default being dropped', () => {
+  // The scenarios hand runCode() their own data object, so a parameter's
+  // defaultValue is invisible to them: this check is the only thing standing
+  // between a deleted line and every new tag being created with Consent Mode off.
+  const violations = violationsAfter(
+    replaceOnce(
+      '"defaultValue": true,\n        "help": "Sets Google Consent Mode defaults',
+      '"help": "Sets Google Consent Mode defaults',
+    ),
+  );
+  assert.equal(matching(violations, /isComoEnabled.*defaultValue/).length, 1, violations.join('\n'));
+});
