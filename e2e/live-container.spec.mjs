@@ -234,14 +234,11 @@ async function loadedBundles(page) {
 // rather than substring-matched for the same reason as loadedSdkPaths: `includes`
 // would accept https://evil.example/headless-api.axeptio.tech.
 //
-// `responseStatus` is what makes the resolver assertable at all from a page that
-// cannot read the response body. It is a Chromium PerformanceResourceTiming field
-// and, unlike transferSize and the rest, it is exposed for cross-origin responses
-// without Timing-Allow-Origin, precisely so a page can tell a served answer from a
-// failed one. The service's contract has exactly two successful shapes — 200 with
-// a flow and a configuration, 404 with neither — and without the status the test
-// cannot tell which one it got, so it would have to accept either outcome and
-// could then never fail.
+// Only the fact of the request is read here, not its status: PerformanceResourceTiming's
+// responseStatus is 0 for a cross-origin resource unless the server sends
+// Timing-Allow-Origin, and the geolocation service does not (measured: the first
+// live run with the resolver tag reported "answered 0"). The status comes from
+// askGeolocationService below instead.
 async function geolocationLookup(page, wantedPath) {
   return page.evaluate((wanted) => {
     const entry = performance.getEntriesByType('resource').find((candidate) => {
@@ -253,8 +250,27 @@ async function geolocationLookup(page, wantedPath) {
       }
       return url.hostname === 'headless-api.axeptio.tech' && url.pathname === wanted;
     });
-    return entry ? { path: wanted, status: entry.responseStatus } : null;
+    return entry ? { path: wanted } : null;
   }, wantedPath);
+}
+
+// The service's answer as the runner sees it. The page cannot read the response
+// (a script it injected, on another origin), but the test process can ask the
+// same URL from the same machine, and the service locates by the caller's IP —
+// so this is the answer the browser got, status and body alike. The contract has
+// exactly two successful shapes: 200 assigns a flow and a configuration, 404
+// assigns neither. Without the status the test would have to accept either
+// outcome and could then never fail; with the body it can also check that what
+// the page ended up holding is what the service actually said.
+async function askGeolocationService(request, geoPath) {
+  const response = await request.get(`https://headless-api.axeptio.tech${geoPath}`, { maxRedirects: 0 });
+  const status = response.status();
+  // Only a 200 carries an assignment. The match is deliberately loose about the
+  // surrounding syntax (property assignment or object literal, either quote
+  // style, any whitespace) so a reformatted body still yields the flow: what the
+  // test cares about is the value the service assigned, not how it spelt it.
+  const flowMatch = status === 200 ? /flowType\s*[:=]\s*["']([^"']*)["']/.exec(await response.text()) : null;
+  return { status, flowType: flowMatch ? flowMatch[1] : undefined };
 }
 
 // The SDK telling the page it is running, by whichever entry point the answered
@@ -278,10 +294,11 @@ async function waitForCmpBoot(page) {
 // legitimately get TCF, one from elsewhere Brands, and a project whose targeting
 // matches neither gets a 404 and the tag's configured fallback. What IS pinned is
 // the relationship between the answer and the outcome, which holds wherever the
-// runner sits — and the HTTP status is what makes that a real assertion rather
-// than a list of tolerated outcomes. Asserting "Brands loaded" alone would pass on
-// a broken read-back, which produces Brands for the wrong reason.
-test('Resolver: the geolocation answer decides which bundle loads', async ({ page }) => {
+// runner sits — and the service's own answer, fetched by the test from the same
+// machine, is what makes that a real assertion rather than a list of tolerated
+// outcomes. Asserting "Brands loaded" alone would pass on a broken read-back,
+// which produces Brands for the wrong reason.
+test('Resolver: the geolocation answer decides which bundle loads', async ({ page, request }) => {
   await page.goto(RESOLVER);
 
   const settings = await waitForSettings(page);
@@ -293,7 +310,7 @@ test('Resolver: the geolocation answer decides which bundle loads', async ({ pag
   // resource entry appears when the request completes, not when it is made.
   const geoPath = `/public/geolocation/${CLIENT_ID}.js`;
   await expect.poll(() => geolocationLookup(page, geoPath), { timeout: BOOT_TIMEOUT }).not.toBeNull();
-  const lookup = await geolocationLookup(page, geoPath);
+  const lookup = await askGeolocationService(request, geoPath);
 
   // Read AFTER the CMP has booted and only once. Polling a length that can only
   // grow would sit for the whole timeout on the failure that matters most here —
@@ -313,8 +330,9 @@ test('Resolver: the geolocation answer decides which bundle loads', async ({ pag
     // on and the bundle must be that flow's — and a read-back that lost the
     // service's assignments shows up here as a missing flowType rather than as a
     // Brands bundle nobody questions.
-    expect(['tcf', 'brands'], `the service answered 200 with flowType ${JSON.stringify(flowType)}`)
-      .toContain(flowType);
+    expect(['tcf', 'brands'], `the service answered 200 with flowType ${JSON.stringify(lookup.flowType)}`)
+      .toContain(lookup.flowType);
+    expect(flowType, 'the page holds the flow the service assigned').toBe(lookup.flowType);
     expect(bundles, `flowType ${flowType}`)
       .toEqual([flowType === 'tcf' ? '/tcf/sdk.js' : '/sdk.js']);
   } else if (lookup.status === 404) {
