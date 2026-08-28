@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.3.0...v2.4.0) (2026-08-28)
+
+
+### Features
+
+* **template:** tick Consent Mode and open its group on new tags ([206f43f](https://github.com/axeptio/axeptio-gtm-public-template/commit/206f43fe166aa757bd08353a452ecd368e7e60f0))
+* **template:** tick Consent Mode and open its group on new tags ([5472e1f](https://github.com/axeptio/axeptio-gtm-public-template/commit/5472e1f8ca6d8a7c00b43cd7fce54ff873de87d2))
+
 ## [2.3.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.2.0...v2.3.0) (2026-08-28)
 
 
