@@ -22,6 +22,10 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: 0d96ff4cfcf01849bdcd88f6d53ff9e33b2776cc
+    changeNotes: |-
+      - **template:** route the SDK through a first-party proxy base URL
+  # Older versions
   - sha: 7eeaf70236e834f65d95e98aa4592931407488c9
     changeNotes: |-
       - **template:** support all seven consent types and a configurable wait_for_update
@@ -35,7 +39,6 @@ versions:
       - **template:** leave the Consent Mode checkbox default as it was
       - **template:** resolve one metadata prefix for both the cookie read and the SDK
       - **template:** treat a non-text Region as every region instead of aborting
-  # Older versions
   - sha: 4813bca0c82d09a7ec1dc05dcca0fc563fa3e29c
     changeNotes: |-
       - **ci:** harden the two paths Copilot flagged on the sync
