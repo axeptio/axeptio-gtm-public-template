@@ -119,6 +119,83 @@ async function waitForSettings(page) {
   return page.evaluate(() => window.axeptioSettings);
 }
 
+// The complete key set window.axeptioSettings carries on both fixtures, sorted.
+// Asserted as the WHOLE set rather than as a list of fields that must be absent,
+// because the interesting failure is a key nobody predicted: an Additional Axeptio
+// Settings row added to a CI tag writes whatever key it names straight onto this
+// object, and a list of forbidden names would never mention it. This says the tags
+// carry these nine and nothing else.
+//
+// The nine come from two places in template.tpl, and the difference matters. All of
+// them are written by the settings literal at the foot of the file, so their keys
+// exist whatever the tag holds. metadataPrefix and proxyBaseUrl are assigned after
+// it, each behind a test, so their absence here is what says neither tag set them —
+// as is the absence of consentUpdateAlreadySent, which needs a consent cookie the
+// two boot tests have not yet written.
+const EXPECTED_SETTINGS_KEYS = [
+  'clientId',
+  'cookiesVersion',
+  'dataLayerName',
+  'platform',
+  'postConsentUrl',
+  'triggerGTMEvents',
+  'userCookiesDomain',
+  'userCookiesDuration',
+  'userCookiesSecure',
+];
+
+// Of those nine, the three neither tag fills in. Their keys exist and hold nothing,
+// and the distinction is not academic: the SDK filters undefined out of its merge
+// (widget-client src/sdk/SDKSettings.ts), so a key carrying undefined leaves the
+// SDK's own default alone while a key carrying a VALUE overrides it. Filling one of
+// these fields on a CI tag would keep the key set above intact and still change what
+// the SDK is handed, so both halves are asserted.
+const EMPTY_ON_BOTH_TAGS = ['postConsentUrl', 'userCookiesDomain', 'dataLayerName'];
+
+// What the two CI tags carry beyond the three fields each test already names.
+// Shared because both tags are configured identically apart from product and
+// cookies version, so a difference between the fixtures here would be a finding
+// rather than a fixture detail.
+//
+// None of this is a property of the template alone — the hermetic suite already
+// covers that, with a hand-written data object. What only this layer can say is that
+// the pair works: values stored on a real tag, compiled by GTM, arriving on
+// window.axeptioSettings in the shape the SDK reads. Changing the tags without
+// changing this breaks the suite on purpose; docs/ci-testing.md lists what they hold.
+async function expectStoredTagSettings(page) {
+  // One read, one moment. window.axeptioSettings is live — the template appends to
+  // it and the SDK boots against it on the same page — so separate evaluates would
+  // each see a possibly different object and no assertion would describe any one of
+  // them. The undefined comparison happens in the page for a second reason: undefined
+  // does not survive the Playwright boundary, so a list of values would arrive
+  // indistinguishable from a list of real ones. Only the verdict crosses.
+  const observed = await page.evaluate((emptyFields) => {
+    const settings = window.axeptioSettings;
+    return {
+      keys: Object.keys(settings).sort(),
+      userCookiesDuration: settings.userCookiesDuration,
+      userCookiesSecure: settings.userCookiesSecure,
+      triggerGTMEvents: settings.triggerGTMEvents,
+      carryingAValue: emptyFields.filter((field) => settings[field] !== undefined),
+    };
+  }, EMPTY_ON_BOTH_TAGS);
+
+  const context = `window.axeptioSettings keys: ${JSON.stringify(observed.keys)}`;
+  expect(observed.keys, context).toEqual(EXPECTED_SETTINGS_KEYS);
+  expect(observed.carryingAValue, context).toEqual([]);
+
+  // The tag stores this one as the string "180" — the parameter's own defaultValue
+  // is the number 180, so GTM can carry either, but a value typed into the field is
+  // saved as text and that is what the CI tags hold. makeNumber() in the template
+  // coerces it, and toBe is strict, so what is asserted here is the TYPE the SDK
+  // receives: the uncoerced string would fail.
+  expect(observed.userCookiesDuration).toBe(180);
+  // A checkbox and a boolean-valued select, both true on both tags — no coercion
+  // step between GTM and the SDK to get wrong.
+  expect(observed.userCookiesSecure).toBe(true);
+  expect(observed.triggerGTMEvents).toBe(true);
+}
+
 // Which bundle the browser actually fetched, as exact pathnames. Asserting on this
 // rather than on the tag's configuration is the point: it is the difference between
 // "the template decided to load Brands" and "Brands was loaded".
@@ -151,6 +228,8 @@ test('Brands: the container fires the tag and the real SDK boots', async ({ page
   expect(settings.platform).toBe('tms-gtm');
   expect(settings.cookiesVersion).toBe('insideapp-brands');
 
+  await expectStoredTagSettings(page);
+
   // The Brands bundle, not the TCF one — the two live at different paths and the
   // choice is made by the template's product field.
   await expect.poll(() => loadedSdkPaths(page), { timeout: BOOT_TIMEOUT }).toContain('/sdk.js');
@@ -167,6 +246,7 @@ test('Publishers: the TCF build boots and exposes the IAB API', async ({ page })
   const settings = await waitForSettings(page);
   expect(settings.clientId).toBe(CLIENT_ID);
   expect(settings.platform).toBe('tms-gtm');
+  await expectStoredTagSettings(page);
 
   await expect.poll(() => loadedSdkPaths(page), { timeout: BOOT_TIMEOUT }).toContain('/tcf/sdk.js');
 
