@@ -62,6 +62,37 @@ test('Brands and Publishers each load their own bundle', async ({ page }) => {
   expect((await sdkBoot(page)).requestedUrl).toBe(TCF_URL);
 });
 
+test('the proxy base URL reaches the SDK and the injected URL is unchanged', async ({ page }) => {
+  const result = await run(page, { id: PROJECT_ID, proxyBaseUrl: 'https://sgtm.example.com/axeptio/' });
+  expect(result.error).toBeNull();
+
+  const boot = await sdkBoot(page);
+  // Observed by a classic script reading window.axeptioSettings, not inferred from
+  // the setInWindow call: the whole feature is this one setting arriving before the
+  // SDK boots. The trailing slash is gone because the SDK appends its own paths and
+  // would otherwise ask the proxy for a doubled slash on every request.
+  expect(boot.bootedWith.proxyBaseUrl).toBe('https://sgtm.example.com/axeptio');
+
+  // The bundle does not follow the proxy. inject_script is checked here as written,
+  // before the hermetic rewrite, and a gallery template's permissions are fixed when
+  // the version is published — so this pins that a per-container proxy host can never
+  // become the host the tag injects from.
+  expect(boot.requestedUrl).toBe(BRANDS_URL);
+});
+
+test('no proxy base URL leaves the setting absent', async ({ page }) => {
+  const result = await run(page, { id: PROJECT_ID });
+  expect(result.error).toBeNull();
+
+  const boot = await sdkBoot(page);
+  // Absence of the key, not an undefined value: assigning undefined would leave
+  // proxyBaseUrl on the object the SDK reads, which it takes as a proxy set to
+  // nothing, and a value assertion cannot see the difference. clientId proves the
+  // key list is really populated, so the negative above means something.
+  expect(boot.bootedKeys).not.toContain('proxyBaseUrl');
+  expect(boot.bootedKeys).toContain('clientId');
+});
+
 test('Consent Mode defaults reach the data layer before the SDK loads', async ({ page }) => {
   const result = await run(page, {
     id: PROJECT_ID,

@@ -58,11 +58,12 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 </details>
 
 <details>
-<summary><strong>Server-side</strong></summary>
+<summary><strong>Server-side and first-party proxy</strong></summary>
 
 | Field | What it does |
 | --- | --- |
-| Server-side URL | Your server-side container URL, for forwarding consent. Pair with the [sGTM template](#related-templates). Accepts a GTM variable. |
+| First-party proxy base URL | Routes the SDK's own requests through a host you control instead of Axeptio's. See [First-party proxy](#first-party-proxy). Accepts a GTM variable. |
+| Server-side URL | Your server-side container URL, for forwarding consent. Pair with the [sGTM template](#related-templates). Accepts a GTM variable. With a proxy set, leave this empty so consent goes through the proxy — if set, this URL wins. |
 
 </details>
 
@@ -89,6 +90,30 @@ A key/value table for any other SDK setting — see the
 [advanced settings documentation](https://support.axeptio.eu/en/articles/274040).
 
 </details>
+
+### First-party proxy
+
+Set **First-party proxy base URL** and the SDK stops calling Axeptio directly: the project
+configuration, the consent POST, the SDK's lazy-loaded chunks, its fonts, its favicons and the
+partner templates are all requested under that URL, on the `/client`, `/api/v1`, `/static`,
+`/fonts`, `/favicons` and `/static-eu` paths. It must be an absolute `http(s)` URL with no query
+string and no fragment — the SDK appends its own paths to it — and trailing slashes are trimmed
+for you.
+
+The **SDK script itself still loads from `static.axept.io`**. A gallery template's permissions are
+fixed when the version is published, so this tag cannot inject a script from a host chosen per
+container; only the requests the SDK makes after it boots can move.
+
+The ready-made proxy is the
+[axeptio-sgtm-public-template](https://github.com/axeptio/axeptio-sgtm-public-template)
+server-side tag: mount it in your sGTM container and give it a **Proxy Base Path** matching the
+path part of the base URL you enter here — `https://sgtm.example.com/axeptio` pairs with
+`/axeptio`. Any reverse proxy exposing the six namespaces above works too.
+
+**Server-side URL** wins for consent: set it and the SDK posts consent there rather than through
+the proxy, so leave it empty unless the two are genuinely different hosts. The setting can also be
+spelled as a `proxyBaseUrl` row in Additional Settings; the field wins over the row, and both the
+override and a URL the tag cannot use are named in GTM Preview.
 
 ### Choosing Brands or Publishers
 

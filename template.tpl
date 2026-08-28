@@ -166,9 +166,26 @@ ___TEMPLATE_PARAMETERS___
   {
     "type": "GROUP",
     "name": "serverSide",
-    "displayName": "Server-side",
+    "displayName": "Server-side and first-party proxy",
     "groupStyle": "ZIPPY_CLOSED",
     "subParams": [
+      {
+        "type": "TEXT",
+        "name": "proxyBaseUrl",
+        "displayName": "First-party proxy base URL",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "REGEX",
+            "args": [
+              "^([Hh][Tt][Tt][Pp][Ss]?:\\/\\/[^\\s?#/][^\\s?#]*|\\{\\{.+\\}\\})$"
+            ],
+            "enablingConditions": [],
+            "errorMessage": "Must be an http(s) URL without query or fragment, or a GTM variable"
+          }
+        ],
+        "help": "Base URL the SDK routes its configuration, consent, chunk, font and favicon requests through, for example https://sgtm.example.com/axeptio with the Axeptio sGTM proxy template mounted there, or any reverse proxy exposing the /static, /client, /api/v1, /favicons, /fonts and /static-eu namespaces. The SDK script itself still loads from static.axept.io. Leave empty to call Axeptio directly."
+      },
       {
         "type": "TEXT",
         "name": "postConsentUrl",
@@ -184,7 +201,7 @@ ___TEMPLATE_PARAMETERS___
             "errorMessage": "Must be an http(s) URL or a GTM variable"
           }
         ],
-        "help": "Your server-side container\u0027s URL"
+        "help": "Where the SDK posts consent. With a first-party proxy set, leave this empty so consent goes through the proxy; if set, this URL wins."
       }
     ]
   },
@@ -553,6 +570,173 @@ if (metadataPrefixField !== '$$') {
   metadataPrefix = metadataPrefixRow;
 }
 
+// The SDK can send everything but its own bundle to a first-party host:
+// axeptioSettings.proxyBaseUrl makes it build the project configuration, the
+// consent POST, its lazy-loaded chunks, its fonts, its favicons and the partner
+// templates under that origin instead of Axeptio's. The bundle itself still comes
+// from static.axept.io, because injectScript below is bound by the inject_script
+// permission and a gallery template's permissions are fixed when the version is
+// published - a host chosen per container could never be declared there.
+//
+// The SDK validates the value again on its side and deletes it when it does not
+// hold up, which is silent. So it is checked here too, where Preview can say why:
+// an absolute http(s) URL, no whitespace inside it, no query and no fragment,
+// because the SDK appends its own paths and parameters to it. Whitespace AROUND
+// the value is trimmed rather than refused - a trailing space in a GTM field is
+// a slip, not a configuration, and the SDK would otherwise delete the whole
+// value for it. Trailing slashes are trimmed for a similar reason: '.../axeptio/'
+// + '/client/...' would ask the proxy for a doubled slash it may not route.
+const trimTrailingSlashes = (value) => {
+  let trimmed = value;
+  while (trimmed.charAt(trimmed.length - 1) === '/') {
+    trimmed = trimmed.substring(0, trimmed.length - 1);
+  }
+  return trimmed;
+};
+// The SDK rejects a proxy base URL containing any JS \s at all. After the
+// surrounding whitespace is trimmed, this has to reject every remaining
+// whitespace code point the SDK would, or the tag forwards a value the SDK then
+// deletes in silence - the failure this check exists to prevent. Character codes rather than
+// a RegExp, which the sandbox does not have: everything up to and including the
+// space, then the no-break space, the Ogham space, the en/em quad family, the line
+// and paragraph separators, the narrow and medium mathematical spaces, the
+// ideographic space and the BOM.
+const isWhitespaceCode = (code) => {
+  if (code <= 32) {
+    return true;
+  }
+  // Decimal on purpose: GTM's sandbox parser rejects hex literals ("missing ';'
+  // at 'xA0'") although Node accepts them, so only the compile check would see
+  // the difference. NBSP, ogham space, U+2000-200A, line/paragraph separators,
+  // narrow NBSP, medium mathematical space, ideographic space, BOM.
+  return code === 160 || code === 5760 || (code >= 8192 && code <= 8202) ||
+    code === 8232 || code === 8233 || code === 8239 || code === 8287 ||
+    code === 12288 || code === 65279;
+};
+const usableProxyBaseUrl = (value) => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const candidate = value.trim();
+  // A scheme is case-insensitive, and the SDK's own new URL() takes 'HTTPS://...'
+  // happily; rejecting it here would refuse a value that works and send every
+  // request back to Axeptio. Only the comparison is lowercased - the eight
+  // characters a scheme can occupy - and the value keeps its letter case, with
+  // only the surrounding whitespace and trailing slashes removed, because the
+  // path may be case-sensitive to whatever the proxy routes on.
+  const schemePrefix = candidate.substring(0, 8).toLowerCase();
+  let scheme = '';
+  if (schemePrefix.indexOf('https://') === 0) {
+    scheme = 'https://';
+  } else if (schemePrefix.indexOf('http://') === 0) {
+    scheme = 'http://';
+  } else {
+    return undefined;
+  }
+  // The host must start right after the scheme. Three slashes after it leave no
+  // host at all, and the browser's URL parser would quietly promote the first
+  // path segment to one — every SDK request would then go to a machine that
+  // does not exist, with nothing logged.
+  if (candidate.charAt(scheme.length) === '/') {
+    return undefined;
+  }
+  // Character by character, the sandbox having no RegExp. Whitespace inside the
+  // URL is what a half-resolved GTM variable or a copy-paste out of a document
+  // leaves behind, and it would turn every SDK request into a 404 rather than
+  // fail anywhere visible. A no-break space out of a word processor is the same
+  // problem wearing a disguise, which is why the test is every whitespace code
+  // point rather than the four that are easy to type.
+  for (let index = scheme.length; index < candidate.length; index += 1) {
+    const character = candidate.charAt(index);
+    if (character === '?' || character === '#' ||
+        isWhitespaceCode(candidate.charCodeAt(index))) {
+      return undefined;
+    }
+  }
+  const normalised = trimTrailingSlashes(candidate);
+  return (normalised.length > scheme.length) ? normalised : undefined;
+};
+
+// Nearly the same shape as the metadata prefix above: the field is the one this
+// template validates and the one an installer sees, so it wins; a proxyBaseUrl row
+// that was already in Additional Settings keeps working on its own; and the
+// coercion loop further down skips the key, so a row cannot quietly overwrite what
+// is decided here. A value that is present but unusable is named rather than
+// dropped in silence - the publisher asked for a proxy and every request is still
+// going to Axeptio. The one difference is blankness: a whitespace-only prefix warns
+// there, while a whitespace-only proxy is deliberately quiet here, because blank is
+// the normal not-set state for a URL field.
+const proxyBaseUrlField = usableProxyBaseUrl(data.proxyBaseUrl);
+// A blank field is the normal "not set" state and stays silent; only a value
+// somebody typed (or a variable resolved to) that cannot be used gets a reason.
+const proxyBaseUrlBlank = data.proxyBaseUrl === undefined ||
+  (typeof data.proxyBaseUrl === 'string' && data.proxyBaseUrl.trim() === '');
+// A row gets the same treatment as the field rather than being dropped without a
+// word: before this block existed the row was forwarded verbatim and the SDK made
+// the call, so a publisher who only ever spelled the setting in the table would
+// otherwise lose it here in silence.
+const proxyBaseUrlRowValue = findAdditionalSetting('proxyBaseUrl');
+const proxyBaseUrlRow = usableProxyBaseUrl(proxyBaseUrlRowValue);
+const proxyBaseUrlRowBlank = proxyBaseUrlRowValue === undefined ||
+  (typeof proxyBaseUrlRowValue === 'string' && proxyBaseUrlRowValue.trim() === '');
+// Both messages are decided after the row is known, because "ignored" is only true
+// when nothing takes the field's place: with a usable row behind it the proxy does
+// come up, just not on the value the installer is looking at, and saying "ignored"
+// would send them hunting for a proxy that is in fact running.
+if (!proxyBaseUrlBlank && proxyBaseUrlField === undefined) {
+  if (proxyBaseUrlRow !== undefined) {
+    logToConsole('Axeptio GTM tag: First-party proxy base URL is not usable; using the proxyBaseUrl row from Additional Settings');
+  } else {
+    logToConsole('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+  }
+}
+if (!proxyBaseUrlRowBlank && proxyBaseUrlRow === undefined) {
+  logToConsole('Axeptio GTM tag: proxyBaseUrl row in Additional Settings is not usable (needs http(s), no query or fragment); ignored');
+}
+let proxyBaseUrl;
+if (proxyBaseUrlField !== undefined) {
+  proxyBaseUrl = proxyBaseUrlField;
+  if (proxyBaseUrlRow !== undefined && proxyBaseUrlRow !== proxyBaseUrlField) {
+    logToConsole('Axeptio GTM tag: First-party proxy base URL field overrides the proxyBaseUrl row in Additional Settings');
+  }
+} else if (proxyBaseUrlRow !== undefined) {
+  proxyBaseUrl = proxyBaseUrlRow;
+}
+
+// http is still accepted - a proxy on localhost or a dev host has no certificate -
+// but on an https page the browser blocks every request the SDK makes to it as
+// mixed content, and it says so in its own console rather than in Preview, next to
+// nothing that names this tag. So it is called out where the setting is made.
+if (proxyBaseUrl !== undefined && proxyBaseUrl.substring(0, 7).toLowerCase() === 'http://') {
+  logToConsole('Axeptio GTM tag: First-party proxy base URL uses http; on an https page the browser blocks every SDK request as mixed content');
+}
+
+// The Server-side URL field is TEXT, and TEXT accepts a GTM variable that can
+// resolve to a number or an object. That used to be forwarded as-is: the SDK would
+// POST consent to whatever it made of it, and because the check below was
+// typeof-guarded the tag did not even say the two settings were competing. A value
+// that is not text cannot be a URL, so it is dropped here and named.
+const postConsentUrlPresent = data.postConsentUrl !== undefined && data.postConsentUrl !== null;
+const postConsentUrlIsText = typeof data.postConsentUrl === 'string';
+if (postConsentUrlPresent && !postConsentUrlIsText) {
+  logToConsole('Axeptio GTM tag: Server-side URL is not text; ignored');
+}
+const postConsentUrlSetting = postConsentUrlIsText ? data.postConsentUrl : undefined;
+
+// An explicit Server-side URL is kept by the SDK exactly as given and is never
+// re-derived from the proxy, so with both set the consent POST leaves the proxy
+// while everything else stays on it. That is a legitimate setup - a server-side
+// container that is not the proxy - so nothing changes here; it is only named,
+// because "consent is not going through my proxy" is otherwise invisible.
+//
+// Only a URL that survives the check above counts: one that was dropped for not
+// being text is not posted to, so saying consent goes there instead of through the
+// proxy would be the opposite of what happens.
+const postConsentUrlSet = postConsentUrlIsText && data.postConsentUrl.trim() !== '';
+if (proxyBaseUrl !== undefined && postConsentUrlSet) {
+  logToConsole('Axeptio GTM tag: Server-side URL is set, so consent is posted there rather than through the proxy');
+}
+
 if(data.isComoEnabled){
   
   // The Region column is TEXT, but TEXT accepts a GTM variable, and a lookup that
@@ -873,7 +1057,7 @@ const axeptioSettings = {
   userCookiesDuration: makeNumber(data.cookiesDuration),
   userCookiesDomain: data.cookiesDomain,
   userCookiesSecure: data.cookiesSecure,
-  postConsentUrl: data.postConsentUrl,
+  postConsentUrl: postConsentUrlSetting,
   triggerGTMEvents: data.triggerGTMEvents,
   platform: 'tms-gtm'
 };
@@ -891,6 +1075,15 @@ if (consentUpdateAlreadySent) {
 // writing over what is decided here.
 if (metadataPrefix !== '$$') {
   axeptioSettings.metadataPrefix = metadataPrefix;
+}
+
+// Written only when there is a value to write, so the object the SDK reads carries
+// no key this tag has nothing to say about. Not a behavioural necessity: the SDK
+// filters undefined values out of the merge itself (widget-client
+// src/sdk/SDKSettings.ts:445), so an explicit undefined would land the same way -
+// this keeps the settings object honest about what the container actually set.
+if (proxyBaseUrl !== undefined) {
+  axeptioSettings.proxyBaseUrl = proxyBaseUrl;
 }
 
 // Every "Additional Axeptio Settings" row arrives here as a STRING: the table is
@@ -987,11 +1180,13 @@ if (additionalSettings && typeof additionalSettings.length === 'number') {
     if (!key) {
       continue;
     }
-    // metadataPrefix was already resolved at the top, together with the field it
-    // competes with, and forwarded above. Writing it again here is what used to
-    // let the row silently win over the field, leaving the tag reading the cookie
-    // under one prefix and the SDK writing under another.
-    if (key === 'metadataPrefix') {
+    // metadataPrefix and proxyBaseUrl were both resolved at the top, each against
+    // the field it competes with, any conflict already named in Preview, and the
+    // winner already written above. Writing either again here would overturn that
+    // decision after the fact and without a word: the tag reading the cookie under
+    // one prefix while the SDK writes under another, or the SDK proxying to a host
+    // the field did not name.
+    if (key === 'metadataPrefix' || key === 'proxyBaseUrl') {
       continue;
     }
     // A row with a key and no value - typed and left blank, or a GTM variable that
@@ -2560,6 +2755,283 @@ scenarios:
     assertApi('updateConsentState').wasNotCalled();
     assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: consent cookie uses a different metadata prefix; set Consent cookie metadata prefix to match; early consent skipped');
     assertApi('injectScript').wasCalled();
+- name: The first-party proxy base URL is forwarded to the SDK
+  code: |-
+    // The whole feature is this one setting: the SDK reads it off
+    // window.axeptioSettings and rebuilds every endpoint but its own bundle under
+    // it. The bundle stays on static.axept.io, which the injectScript assertion
+    // pins - inject_script is fixed when the gallery version is published.
+    let settings;
+    let injected;
+    mock('setInWindow', (key, value) => { settings = value; });
+    mock('injectScript', (url) => { injected = url; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'https://sgtm.example.com/axeptio'});
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('https://sgtm.example.com/axeptio');
+    assertThat(injected).isEqualTo('https://static.axept.io/sdk.js');
+- name: An uppercase scheme is accepted and forwarded as typed
+  code: |-
+    // A scheme is case-insensitive and the SDK's own new URL() takes 'HTTPS://...',
+    // so rejecting it here would refuse a value that works and quietly send every
+    // request back to Axeptio. Only the check is case-folded - the value reaches the
+    // SDK exactly as it was typed.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'HTTPS://Sgtm.Example.com/axeptio'});
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('HTTPS://Sgtm.Example.com/axeptio');
+    assertApi('logToConsole').wasNotCalled();
+- name: An http proxy base URL is forwarded with a mixed content warning
+  code: |-
+    // http stays accepted, because a proxy on localhost or a dev host has no
+    // certificate. But on an https page the browser blocks every SDK request to it
+    // as mixed content and complains in its own console, where nothing names this
+    // tag - so the warning is issued here, next to the setting that caused it.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'http://localhost:8080/axeptio'});
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('http://localhost:8080/axeptio');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL uses http; on an https page the browser blocks every SDK request as mixed content');
+- name: Trailing slashes are trimmed from the proxy base URL
+  code: |-
+    // The SDK appends '/client/...' and friends, so a trailing slash would ask the
+    // proxy for a doubled slash on every request.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'https://sgtm.example.com/axeptio//'});
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('https://sgtm.example.com/axeptio');
+- name: No proxy base URL leaves the setting absent
+  code: |-
+    // Absent must stay absent rather than becoming an explicit undefined, which the
+    // SDK would read as a proxy that was set to nothing - and must stay quiet,
+    // because that is every tag saved before the field existed.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d'});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasNotCalled();
+- name: A blank proxy base URL is silent
+  code: |-
+    // An empty field is the normal "not set" state, not a misconfiguration.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: '   '});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasNotCalled();
+- name: A proxy base URL with whitespace is ignored with a reason
+  code: |-
+    // What a half-resolved GTM variable or a copy-paste out of a document leaves
+    // behind. Forwarded, it would 404 every SDK request; the SDK deletes it in
+    // silence, so the reason has to come from here.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'https://sgtm example.com/axeptio'});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A proxy base URL with a non breaking space is ignored with a reason
+  code: |-
+    // A no-break space survives a copy out of a word processor and is invisible next
+    // to a real one. The SDK rejects every whitespace character, so anything this
+    // check lets through that the SDK will not is forwarded and then deleted in
+    // silence - the two sides have to reject the same set. Written as an escape
+    // so the character stays visible in the source.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'https://sgtm\u00A0example.com/axeptio'});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A proxy base URL with a query string is ignored with a reason
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'https://sgtm.example.com/axeptio?env=prod'});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A proxy base URL with a fragment is ignored with a reason
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'https://sgtm.example.com/axeptio#main'});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A non text proxy base URL is ignored with a reason
+  code: |-
+    // The field is TEXT, but TEXT accepts a GTM variable, and a lookup that misfires
+    // can hand over a number. Nothing here may be called on it, and the key must not
+    // reach the settings object at all - an explicit undefined is a proxy the SDK
+    // reads as set to nothing.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 42});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A proxy base URL without a host is ignored with a reason
+  code: |-
+    // 'https:///axeptio' passes a naive scheme check; the browser would read
+    // 'axeptio' as the host and every SDK request would go nowhere, silently.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'https:///axeptio'});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A proxy base URL without a scheme is ignored with a reason
+  code: |-
+    // A bare host is what gets pasted out of a proxy console. The SDK builds absolute
+    // URLs from this value, so a scheme-less one has no origin to build on and would
+    // break every request it touches.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', proxyBaseUrl: 'sgtm.example.com/axeptio'});
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A proxy and a Server-side URL together are both forwarded and explained
+  code: |-
+    // The SDK keeps an explicit postConsentUrl as given and never re-derives it
+    // from the proxy, so consent leaves the proxy path while everything else stays
+    // on it. Legitimate when the two are different hosts, invisible otherwise.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      proxyBaseUrl: 'https://sgtm.example.com/axeptio',
+      postConsentUrl: 'https://sgtm.example.com/consent'
+    });
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('https://sgtm.example.com/axeptio');
+    assertThat(settings.postConsentUrl).isEqualTo('https://sgtm.example.com/consent');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: Server-side URL is set, so consent is posted there rather than through the proxy');
+- name: A non text Server-side URL is ignored with a reason
+  code: |-
+    // The field is TEXT, but TEXT accepts a GTM variable, and a lookup that misfires
+    // can hand over a number. It used to be forwarded as-is and the SDK would POST
+    // consent to whatever it made of it. A value that is not text cannot be a URL.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', postConsentUrl: 42});
+
+    assertThat(settings.postConsentUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: Server-side URL is not text; ignored');
+- name: A non text Server-side URL does not claim consent left the proxy
+  code: |-
+    // Both settings look set, but the Server-side URL was dropped for not being
+    // text, so consent goes through the proxy after all. Saying otherwise would send
+    // the publisher looking for consent on a container that never receives it.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      proxyBaseUrl: 'https://sgtm.example.com/axeptio',
+      postConsentUrl: 42
+    });
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('https://sgtm.example.com/axeptio');
+    assertThat(settings.postConsentUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: Server-side URL is not text; ignored');
+    assertApi('logToConsole').wasNotCalledWith('Axeptio GTM tag: Server-side URL is set, so consent is posted there rather than through the proxy');
+- name: A proxyBaseUrl row in Additional Settings is honoured on its own
+  code: |-
+    // The setting predates the field, so a project already carrying it in the table
+    // keeps working without being re-entered - and the coercion loop must not write
+    // it a second time.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      axeptioAdditionalSettings: [{key: 'proxyBaseUrl', value: 'https://proxy.example.com/axeptio/'}]
+    });
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('https://proxy.example.com/axeptio');
+- name: The proxy field beats a conflicting Additional Settings row
+  code: |-
+    // Both sides set, and disagreeing. The field is the one this template validates
+    // and the one an installer sees, so it wins - and the row that lost is named
+    // rather than dropped silently.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      proxyBaseUrl: 'https://sgtm.example.com/axeptio',
+      axeptioAdditionalSettings: [{key: 'proxyBaseUrl', value: 'https://proxy.example.com/axeptio'}]
+    });
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('https://sgtm.example.com/axeptio');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL field overrides the proxyBaseUrl row in Additional Settings');
+- name: An unusable proxyBaseUrl row is named rather than dropped
+  code: |-
+    // The row used to be forwarded verbatim and the SDK decided; now it is validated
+    // here, so an unusable one has to say why it went nowhere. The publisher asked
+    // for a proxy and every request is still going to Axeptio.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      axeptioAdditionalSettings: [{key: 'proxyBaseUrl', value: 'https://proxy.example.com/axeptio?env=prod'}]
+    });
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: proxyBaseUrl row in Additional Settings is not usable (needs http(s), no query or fragment); ignored');
+- name: An unusable proxy field falls back to the row and says so
+  code: |-
+    // "Ignored" would be a lie here: the row behind the field is usable, so a proxy
+    // does come up - just not on the value the installer is looking at. Naming the
+    // one actually in force is the difference between a five-minute fix and hunting
+    // for a proxy that is already running.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      proxyBaseUrl: 'sgtm.example.com',
+      axeptioAdditionalSettings: [{key: 'proxyBaseUrl', value: 'https://row.example.com'}]
+    });
+
+    assertThat(settings.proxyBaseUrl).isEqualTo('https://row.example.com');
+    assertApi('logToConsole').wasCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable; using the proxyBaseUrl row from Additional Settings');
+    assertApi('logToConsole').wasNotCalledWith('Axeptio GTM tag: First-party proxy base URL is not usable (needs http(s), no query or fragment); ignored');
+- name: A blank proxyBaseUrl row is silent
+  code: |-
+    // A row typed and left blank, or whose GTM variable resolved to nothing, is the
+    // not-set state and not a misconfiguration - the same rule the field follows.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      axeptioAdditionalSettings: [{key: 'proxyBaseUrl', value: '   '}]
+    });
+
+    assertThat(settings.proxyBaseUrl).isUndefined();
+    assertApi('logToConsole').wasNotCalled();
 
 
 ___NOTES___

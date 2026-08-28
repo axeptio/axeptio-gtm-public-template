@@ -114,3 +114,15 @@ test('catches malformed JSON in a structured block', () => {
   const violations = violationsAfter(replaceOnce('"publicId": "logging"', '"publicId" "logging"'));
   assert.equal(matching(violations, /___WEB_PERMISSIONS___ is not valid JSON/).length, 1, violations.join('\n'));
 });
+
+test('catches a hex literal in the sandboxed JS', () => {
+  // Node's vm accepts 0xA0; GTM's parser does not, and only the non-gating compile
+  // check would notice (PR #104). A hex literal inside a comment must NOT trip it.
+  const violations = violationsAfter(replaceOnce('code === 160', 'code === 0xA0'));
+  assert.equal(matching(violations, /hex literal 0xA0/).length, 1, violations.join('\n'));
+  const commentOnly = violationsAfter(replaceOnce('code === 160', 'code === 160 /* was 0xA0 */'));
+  assert.equal(matching(commentOnly, /hex literal/).length, 0, commentOnly.join('\n'));
+  // A URL string on the same line must not swallow the literal as a "comment".
+  const afterUrl = violationsAfter(replaceOnce('code === 160', "'https://h.example' === 0xA0 || code === 160"));
+  assert.equal(matching(afterUrl, /hex literal 0xA0/).length, 1, afterUrl.join('\n'));
+});
