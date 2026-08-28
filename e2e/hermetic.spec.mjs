@@ -18,6 +18,10 @@ const PROJECT_ID = '6a22da4da7d365c1e246783d';
 const REGION_PROJECT_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const BRANDS_URL = 'https://static.axept.io/sdk.js';
 const TCF_URL = 'https://static.axept.io/tcf/sdk.js';
+const GEO_URL = `https://headless-api.axeptio.tech/public/geolocation/${PROJECT_ID}.js`;
+// A configuration id, which is what the geolocation service answers with — not a
+// configuration name, which is what the Cookies Version field holds.
+const RESOLVED_CONFIG_ID = '6904ca84683c996cd3788342';
 
 async function openHarness(page) {
   await page.goto('/e2e/fixtures/hermetic.html');
@@ -29,6 +33,18 @@ const run = (page, data) => page.evaluate((d) => window.runTemplate(d), data);
 // The stub SDK is injected asynchronously; wait for it rather than racing it.
 const sdkBoot = (page) => page.waitForFunction(() => window.__axeptioStub || null)
   .then((handle) => handle.jsonValue());
+
+// Likewise for the geolocation stub, which is injected first and whose callback is
+// what injects the SDK at all.
+const geoLookup = (page) => page.waitForFunction(() => window.__geoStub || null)
+  .then((handle) => handle.jsonValue());
+
+// What the geolocation service will answer on this page. Planted before the
+// template runs, because the real service answers from the visitor's IP and a
+// hermetic suite has no opinion about where the visitor is. Absent means the
+// script assigns nothing — the shape a request matching no configuration returns.
+const planGeoAnswer = (page, answer) =>
+  page.evaluate((value) => { window.__geoAnswer = value; }, answer);
 
 test.beforeEach(async ({ page }) => {
   await openHarness(page);
@@ -206,6 +222,88 @@ test('a consent type outside access_consent aborts the tag before the SDK loads'
   expect(denied).not.toBeNull();
   expect(denied.permission).toBe('access_consent');
   expect(denied.message).toContain('my_custom_consent');
+});
+
+test('the resolver loads the flow it was told, with the configuration it named', async ({ page }) => {
+  // Two real scripts, in order, in a real browser: the geolocation answer assigns
+  // onto window.axeptioSettings, and the SDK — injected only from that answer's
+  // callback — boots and reads what is there. The unit scenarios mock both sides
+  // of that hand-off; here the assignments and the read really happen.
+  await planGeoAnswer(page, { flowType: 'tcf', cookiesVersion: RESOLVED_CONFIG_ID });
+
+  const result = await run(page, {
+    id: PROJECT_ID,
+    product: 'brands',
+    cookiesVersion: 'my-config',
+    autoResolveConfig: true,
+  });
+  expect(result.error).toBeNull();
+
+  // Asked about the project this tag loads, at the path the permission covers.
+  expect((await geoLookup(page)).requestedUrl).toBe(GEO_URL);
+
+  const boot = await sdkBoot(page);
+  // The answered flow beats the Axeptio product field, and the answered
+  // configuration id is what the SDK is handed.
+  expect(boot.requestedUrl).toBe(TCF_URL);
+  expect(boot.bootedWith.cookiesVersion).toBe(RESOLVED_CONFIG_ID);
+  expect(boot.bootedWith.clientId).toBe(PROJECT_ID);
+  // flowType survives the settings being written back over the geolocation
+  // script's own assignments — the live suite reads it to decide what to assert.
+  expect(boot.bootedWith.flowType).toBe('tcf');
+
+  const callbacks = await page.evaluate(() => window.gtmCallbacks());
+  expect(callbacks.successes).toBe(1);
+  expect(callbacks.failures).toBe(0);
+});
+
+test('a geolocation answer that assigns nothing leaves the configured product', async ({ page }) => {
+  // No answer planted, so the stub emits the first line only: the shape the
+  // service returns when nothing matches the visitor. The script loads
+  // successfully, so nothing here is an error — the template has to notice the
+  // absence and fall back rather than wait for a flow that is not coming.
+  const result = await run(page, {
+    id: PROJECT_ID,
+    product: 'brands',
+    cookiesVersion: 'my-config',
+    autoResolveConfig: true,
+  });
+  expect(result.error).toBeNull();
+
+  const geo = await geoLookup(page);
+  expect(geo.requestedUrl).toBe(GEO_URL);
+  expect(geo.answered).toBe(false);
+
+  const boot = await sdkBoot(page);
+  expect(boot.requestedUrl).toBe(BRANDS_URL);
+  expect(boot.bootedWith.cookiesVersion).toBe('my-config');
+  expect(boot.bootedKeys).not.toContain('flowType');
+});
+
+test('the geolocation permission covers its own path and nothing else on that host', async ({ page }) => {
+  // The permission is evaluated for real here, against the template's own
+  // ___WEB_PERMISSIONS___. Without the new entry the template's queryPermission
+  // fails and the tag never asks at all — which is why the two resolver tests
+  // above prove the entry exists, and why this one proves it is not broader than
+  // the endpoint.
+  const result = await page.evaluate(async ([geoUrl, projectId]) => {
+    const { createRuntime } = await import('./gtm-runtime.js');
+    const permissions = await fetch('/template/permissions.json').then((r) => r.json());
+    const queryPermission = createRuntime(permissions).require('queryPermission');
+    return {
+      resolver: queryPermission('inject_script', geoUrl),
+      otherProject: queryPermission('inject_script',
+        `https://headless-api.axeptio.tech/public/geolocation/${projectId}.js?country=FR`),
+      elsewhereOnTheHost: queryPermission('inject_script', 'https://headless-api.axeptio.tech/evil.js'),
+      lookalikeHost: queryPermission('inject_script',
+        'https://evil.example.com/headless-api.axeptio.tech/public/geolocation/x.js'),
+    };
+  }, [GEO_URL, PROJECT_ID]);
+
+  expect(result.resolver).toBe(true);
+  expect(result.otherProject).toBe(true);
+  expect(result.elsewhereOnTheHost).toBe(false);
+  expect(result.lookalikeHost).toBe(false);
 });
 
 test('a denied inject_script permission takes the failure path', async ({ page }) => {

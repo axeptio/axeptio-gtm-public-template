@@ -115,9 +115,10 @@ That overrides resolution for the test browser only, leaving the system alone.
 the live version for every page carrying that container ID.
 
 It is seeded by hand once: import `template.tpl` as a custom template named
-**Axeptio CMP** — the name the sync script looks it up by — then create two tags from
-it, Brands and Publishers, each on a trigger matching a different page path. CI
-replaces the template's code on every run; the tags persist across versions.
+**Axeptio CMP** — the name the sync script looks it up by — then create three tags from
+it, Brands, Publishers and the geolocation resolver, each on a trigger matching a
+different page path. CI replaces the template's code on every run; the tags persist
+across versions.
 
 The trigger paths are a contract with `e2e/fixtures/`:
 
@@ -125,10 +126,28 @@ The trigger paths are a contract with `e2e/fixtures/`:
 | --- | --- |
 | `live-brands.html` | Page Path contains `live-brands` |
 | `live-publishers.html` | Page Path contains `live-publishers` |
+| `live-resolver.html` | Page Path contains `live-resolver` |
 
 Renaming a fixture silently stops its tag firing, and the symptom is an absent banner
-rather than a 404. The two conditions must stay mutually exclusive: when both tags
+rather than a 404. The conditions must stay mutually exclusive: when two tags
 fired from one trigger, two competing CMPs loaded on the same page.
+
+**The resolver assertion is structural, on purpose.** The resolver tag carries the
+same project as the Brands tag — the CI project holds a Brands *and* a TCF
+configuration — with **Let Axeptio pick the configuration from the visitor's
+location** ticked, **Cookies Version** empty, and Consent Mode on with the same
+single default row as the other two. Which banner it gets is decided by
+`headless-api.axeptio.tech` from the runner's own IP, and GitHub's runners move
+between regions, so pinning a flow would make the suite fail on a change of
+datacentre and say nothing about the template. What the test asserts instead is the
+*relationship* between the answer and the outcome, which holds wherever the runner
+sits: the service was asked, exactly one `static.axept.io` bundle loaded, and the
+answer's own HTTP status — read off the `PerformanceResourceTiming` entry, the only
+part of a cross-origin response a page can see — says which outcome is required. A
+`200` must produce a `flowType` of `tcf` or `brands` and the matching bundle; a `404`
+must produce no `flowType` and the configured Brands fallback; any other status fails
+the test with the status in the message. Without the status the test could only
+accept either bundle, which is what a broken read-back also produces.
 
 Two settings the live suite depends on and the repository cannot see:
 
@@ -141,9 +160,12 @@ Two settings the live suite depends on and the repository cannot see:
   not GTM's. The round-trip test asserts on the key directly, so losing the setting
   surfaces here rather than silently in production.
 
-Both tags also hold parameter values the live suite asserts on, so editing a tag can
-turn the suite red without a line of this repository changing. They are configured
-identically apart from **Axeptio product** and **Cookies Version**:
+The Brands and Publishers tags also hold parameter values the live suite asserts on,
+so editing a tag can turn the suite red without a line of this repository changing.
+They are configured identically apart from **Axeptio product** and **Cookies
+Version**. (The resolver tag is not in this table: it deliberately sets no Cookies
+Version, and it carries a `flowType` key the two below do not, so the whole-key-set
+assertion is not applied to it.)
 
 | Tag parameter | Stored on both tags | How the suite reads it |
 | --- | --- | --- |

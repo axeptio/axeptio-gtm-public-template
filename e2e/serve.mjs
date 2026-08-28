@@ -73,8 +73,9 @@ const server = createServer(async (req, res) => {
     // The live fixtures need the container and project ids, which are repository
     // variables rather than committed values. Substituting them here keeps the
     // URL path intact — and the path is load-bearing: the container's triggers
-    // fire on "Page Path contains live-brands" / "live-publishers", so the ids
-    // cannot be carried in the path or the tags would stop matching.
+    // fire on "Page Path contains live-brands" / "live-publishers" /
+    // "live-resolver", so the ids cannot be carried in the path or the tags would
+    // stop matching.
     if (extname(filePath) === '.html') {
       const html = body.toString('utf8')
         .replaceAll('__GTM_PUBLIC_ID__', process.env.GTM_TEST_PUBLIC_ID || '')
