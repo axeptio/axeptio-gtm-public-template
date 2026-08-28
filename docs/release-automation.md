@@ -110,9 +110,9 @@ body:    docs: expand the README and correct the gallery description   <- parsed
 Two consequences, both deliberate and kept:
 
 - Every PR contributes **its commits plus its title**, so a PR of three commits yields four
-  changelog lines. The extra line is usually a vaguer restatement of one of the commits.
-  `update-metadata-version.mjs` dedupes only exact matches, so a near-duplicate survives into the
-  gallery notes.
+  changelog lines. The extra line is usually a vaguer restatement of one of the commits. It stays
+  in `CHANGELOG.md`; `update-metadata-version.mjs` keeps it out of the gallery notes by dropping
+  the bullets whose SHA git reports as a merge commit.
 - A PR **titled** `fix:` cuts a release even when none of its commits do.
 
 This is why `Validate PR title` is a required status check and not cosmetic hygiene. The
@@ -120,10 +120,14 @@ alternative — setting `merge_commit_message: BLANK` — would make the title i
 duplicate, at the cost of the title no longer being reviewed as a release artifact. That trade was
 considered and declined.
 
-`changeNotes` are filtered separately, by section, in `update-metadata-version.mjs` — only
-breaking changes, Features, Bug Fixes, Performance Improvements and Reverts reach the gallery. If
-a release ever contains nothing from those sections, the notes fall back to `Release <tag>`, which
-is the signal that something released which should not have.
+`changeNotes` are filtered separately in `update-metadata-version.mjs`, by three rules: **section**
+(only breaking changes, Features, Bug Fixes, Performance Improvements and Reverts reach the
+gallery), **scope** (`ci`, `build`, `chore`, `docs` and `test` never do, even under Bug Fixes) and
+**merge commits** (dropped when git can answer; kept, with a warning in the run log, when it
+cannot — only this rule degrades, the other two are pure). What survives is rendered as plain text — the gallery shows no markdown — with the
+implied `template:` scope removed. If a release ever contains nothing that passes, the notes fall
+back to `Release <tag>`, which is the signal that nothing a GTM user can see reached that release
+— worth a look before the sync PR is merged.
 
 ## Authentication
 
