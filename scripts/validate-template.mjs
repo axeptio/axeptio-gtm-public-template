@@ -293,6 +293,30 @@ export function validateTemplate(tplPath = TPL_PATH) {
     fail(`sandboxed JS uses the hex literal ${literal}; GTM's parser rejects hex literals — write it in decimal`);
   }
 
+  // --- 10. The Consent Mode switch defaults to on. ----------------------------
+  // A parameter's defaultValue is invisible to the ___TESTS___ scenarios: they hand
+  // runCode() their own `data` object, so this line could be deleted and every
+  // scenario would still pass while every newly created tag came out with Consent
+  // Mode off. It has been added and removed once already (3458dee, then 40cc451),
+  // which is why it is pinned here rather than left to review.
+  const consentGroup = parsed.___TEMPLATE_PARAMETERS___.find((param) => param.name === 'googleSettings');
+  const consentSwitch = ((consentGroup && consentGroup.subParams) || []).find(
+    (param) => param.name === 'isComoEnabled',
+  );
+  if (!consentSwitch) {
+    fail(
+      'the isComoEnabled checkbox is not a subParam of the "googleSettings" group in ' +
+      '___TEMPLATE_PARAMETERS___ — its defaultValue cannot be checked',
+    );
+  } else if (consentSwitch.defaultValue !== true) {
+    fail(
+      'isComoEnabled has no "defaultValue": true, so new tags would be created with Consent ' +
+      'Mode off. That default was added once (3458dee) and removed again (40cc451); the ' +
+      '___TESTS___ scenarios pass their own data object and cannot see parameter defaults, ' +
+      'so nothing else in CI would notice it going missing.',
+    );
+  }
+
   return violations;
 }
 
