@@ -45,6 +45,16 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 | **Cookies Version** | — | Loads a named cookie configuration. Left empty, the configuration's `pages` property decides. |
 
 <details>
+<summary><strong>Per-region projects</strong></summary>
+
+| Field | What it does |
+| --- | --- |
+| Visitor country (GTM variable) | A variable holding the visitor's ISO 3166-1 alpha-2 country (`FR`) or ISO 3166-2 subdivision (`US-CA`), typically from a CDN or server-side geolocation header. Left empty, the two fields above are always used. |
+| Projects by region | One row per set of regions, each naming the **Project ID**, the **Axeptio product** and optionally the **Cookies Version** to load there. The first matching row replaces those fields above. See [below](#serving-brands-in-some-countries-and-tcf-in-others). |
+
+</details>
+
+<details>
 <summary><strong>Cookie settings</strong></summary>
 
 | Field | Default | What it does |
@@ -136,20 +146,56 @@ Project ID with the product left on Brands loads the wrong SDK and no TCF banner
 
 Axeptio's geolocated display selects between configurations *within* one product — there is no
 path from Brands to Publishers. Crossing that boundary needs two projects and a choice made in
-the container, before the SDK loads.
+the container, before the SDK loads. The **Per-region projects** group makes that choice in the
+tag itself:
 
-Both **Project ID** and **Axeptio product** accept GTM variables, so drive them from one country
-lookup:
+1. Set **Visitor country (GTM variable)** to a variable holding the visitor's country. GTM has no
+   geolocation of its own, so it comes from your CDN or server-side container — a `CF-IPCountry`,
+   `X-Geo-Country` or equivalent header, read by a Data Layer or JavaScript variable. ISO 3166-1
+   alpha-2 (`FR`) or ISO 3166-2 (`US-CA`); case and surrounding spaces don't matter.
+2. Fill **Projects by region**, one row per set of regions:
 
-| Country variable | Project ID | Axeptio product |
-| --- | --- | --- |
-| `^(FR\|DE\|IT)$` | `<your TCF project ID>` | `publishers` |
-| *default* | `<your standard project ID>` | `brands` |
+| Regions | Project ID | Axeptio product | Cookies Version |
+| --- | --- | --- | --- |
+| `FR, DE, IT` | `<your TCF project ID>` | Publishers (TCF) | `tcf-base` |
+| `US` | `<your standard project ID>` | Brands (standard CMP) | `us-base` |
 
-Two things to get right:
+The first row whose **Regions** list the visitor's **exact** code wins; if none does, the first
+row listing the **country part** of a subdivision wins — `US` for a visitor in `US-CA`. The
+winning row replaces **both** the Project ID and the Axeptio product above, so the two can no
+longer drift apart, and an exact `US-CA` row carves one state out of a `US` row wherever the two
+sit in the table. A row listing a code an earlier row already covers can never apply; Preview
+names it rather than leaving it looking configured.
 
-- **Give the lookup a real default.** A default that isn't a valid Project ID resolves to no
-  configuration, and no banner loads at all.
+**Set a Cookies Version per row when the projects share a domain.** Every Axeptio project on a
+domain writes the same `axeptio_cookies` cookie, and the only thing inside it that tells the
+projects apart is the configuration name. So when a row matches, the tag replays a returning
+visitor's stored consent only if the cookie carries that row's **Cookies Version** — and if
+neither the row nor the field above sets one, it skips the replay and says so rather than
+applying one project's choices under another. Skipping costs only the head start: the SDK still
+applies the visitor's real choices once it boots. Leave the column empty when every project uses
+the same configuration name.
+
+The **Consent cookie metadata prefix** (under *Cookie settings*) is shared by every row, so all
+the projects listed here must use the same prefix.
+
+GTM Preview names the row that matched (`visitor country FR matched per-region row 1; loading
+project … (publishers)`), and equally says when no row matched the country, when the country
+variable is empty or is not text, when a row's Regions or Project ID could not be used, when a
+later row is shadowed by an earlier one, and when a stored consent could not be attributed to
+this project.
+
+The variable-only recipe still works and is unchanged: **Project ID** and **Axeptio product** both
+accept GTM variables, so a pair of lookup tables driven from one country variable does the same
+job. The table replaces two lookups that have to agree with one row that cannot disagree with
+itself.
+
+Two things to get right either way:
+
+- **Give it a real default.** The top-level **Project ID** and **Axeptio product** are the
+  default: they are what a visitor with no matching row — or no country at all — gets. A Project
+  ID that isn't valid resolves to no configuration, and no banner loads at all; Preview says so
+  when the resolved value is not a 24-character id, for a row and for the field alike.
 - **Consent is stored per project.** A visitor whose detected country changes is asked again;
   their earlier choice under the other project is not carried over.
 

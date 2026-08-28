@@ -15,6 +15,7 @@
 import { test, expect } from '@playwright/test';
 
 const PROJECT_ID = '6a22da4da7d365c1e246783d';
+const REGION_PROJECT_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const BRANDS_URL = 'https://static.axept.io/sdk.js';
 const TCF_URL = 'https://static.axept.io/tcf/sdk.js';
 
@@ -60,6 +61,24 @@ test('Brands and Publishers each load their own bundle', async ({ page }) => {
   await openHarness(page);
   await run(page, { id: PROJECT_ID, product: 'publishers' });
   expect((await sdkBoot(page)).requestedUrl).toBe(TCF_URL);
+});
+
+test('a per-region row moves both the bundle and the project the SDK boots with', async ({ page }) => {
+  // The unit scenarios prove the decision; this proves it survives the parts they
+  // stub out. inject_script is evaluated here for the URL the row selected, and the
+  // settings object is read by a classic script that really executed — so a row that
+  // moved the id but not the bundle, or the bundle but not the id, fails here.
+  const result = await run(page, {
+    id: PROJECT_ID,
+    product: 'brands',
+    visitorCountry: 'FR',
+    regionProjects: [{ regions: 'FR, DE', id: REGION_PROJECT_ID, product: 'publishers' }],
+  });
+  expect(result.error).toBeNull();
+
+  const boot = await sdkBoot(page);
+  expect(boot.requestedUrl).toBe(TCF_URL);
+  expect(boot.bootedWith.clientId).toBe(REGION_PROJECT_ID);
 });
 
 test('the proxy base URL reaches the SDK and the injected URL is unchanged', async ({ page }) => {
