@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.6.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.5.0...v2.6.0) (2026-08-28)
+
+
+### Features
+
+* **template:** resolve flow and configuration through the Axeptio geolocation service ([640e6ab](https://github.com/axeptio/axeptio-gtm-public-template/commit/640e6abc17b59fef19412bcaa6bf66d70b42436e))
+* **template:** resolve flow and configuration through the Axeptio geolocation service ([755e609](https://github.com/axeptio/axeptio-gtm-public-template/commit/755e6093b9e8d31f50b08873ae621d0aeaf8e82d))
+
 ## [2.5.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.4.0...v2.5.0) (2026-08-28)
 
 
