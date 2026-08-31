@@ -68,26 +68,47 @@ jobs:
       # same change still has to reach develop, by cherry-pick through a normal
       # PR: merging master back into develop would break every future promotion
       # PR against the guard below.
+      #
+      # The head repository is checked as well as the branch name. `head.ref` is a
+      # bare branch name with no owner, so a fork can name its branch `develop` (or
+      # `hotfix/anything`) and match on the name alone. Both allowed cases are
+      # same-repo by construction — a promotion pushes the real `develop`, and a
+      # hotfix is repository infrastructure — so a fork head targeting master is
+      # never legitimate.
       - name: Only develop and hotfixes may target master
         if: ${{ github.event.pull_request.base.ref == 'master' }}
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          reject() {
+            echo "$1" >&2
+            echo >&2
+            echo "master publishes to the GTM Community Template Gallery; develop is" >&2
+            echo "where work is integrated and released. See docs/release-automation.md." >&2
+            exit 1
+          }
+
           case "$HEAD_REF" in
-            develop | hotfix/*)
-              echo "$HEAD_REF may target master."
-              ;;
+            develop | hotfix/*) ;;
             *)
-              echo "Pull requests into master come from develop (a promotion) or hotfix/*." >&2
-              echo "This one is from '$HEAD_REF'. Re-target it at develop:" >&2
-              echo "  gh pr edit <number> --base develop" >&2
-              echo >&2
-              echo "master publishes to the GTM Community Template Gallery; develop is" >&2
-              echo "where work is integrated and released. See docs/release-automation.md." >&2
-              exit 1
+              reject "$(printf '%s\n%s\n%s' \
+                "Pull requests into master come from develop (a promotion) or hotfix/*." \
+                "This one is from '$HEAD_REF'. Re-target it at develop:" \
+                "  gh pr edit <number> --base develop")"
               ;;
           esac
+
+          if [ "$HEAD_REPO" != "$THIS_REPO" ]; then
+            reject "$(printf '%s\n%s' \
+              "Only branches in $THIS_REPO may target master; this head is $HEAD_REPO." \
+              "A fork can name its branch 'develop', so the name alone is not enough.")"
+          fi
+
+          echo "$HEAD_REPO:$HEAD_REF may target master."
 
       # Merging the base branch INTO a branch makes release-please drop commits from the
       # changelog: its traversal prunes at the merge that pulls already-released
