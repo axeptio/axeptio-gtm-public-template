@@ -1,25 +1,69 @@
 # Release Automation
 
 Releases are driven by [Conventional Commits](https://www.conventionalcommits.org/) and
-[release-please](https://github.com/googleapis/release-please). Every merge to `master`
-maintains a release PR; merging that PR cuts the release and publishes the new version to
-the GTM Community Template Gallery history.
+[release-please](https://github.com/googleapis/release-please). Every merge to `develop`
+maintains a release PR; merging that PR cuts the release. **Cutting a release does not publish
+it** — that happens when `develop` is promoted to `master`.
 
 ## Branch flow
 
 ```
-feature branch ──PR──> master ──> release PR ──> tag + GitHub Release ──> metadata.yaml synced
-                       (default)
+feature branch ──PR──> develop ──> release PR ──> tag + GitHub Release ──> metadata.yaml synced
+                          │                                                    (on develop)
+                          │
+                          └──promotion PR──> master ──> GTM Community Template Gallery
+                                             (default)
 ```
 
-`master` is both the default branch and the release branch. There is no `develop`: a second
-long-lived branch bought nothing but drift, and while it was the default branch it silently
-made release-please open its release PR against the wrong branch.
+- **`develop` is the integration and release branch.** Feature PRs target it, release-please
+  targets it, and `VERSION`, `CHANGELOG.md`, `.release-please-manifest.json` and `metadata.yaml`
+  are all written there.
+- **`master` is the published branch, and stays the *default* branch.** The gallery reads
+  `metadata.yaml`, `template.tpl` and `LICENSE` from the repository's default branch, so making
+  `develop` the default would publish every release the moment it was cut and promotion would mean
+  nothing. It also silently mis-targeted release-please the last time this repository had two
+  long-lived branches, which is why `release.yml` now pins `target-branch: develop` instead of
+  relying on the default.
+- Only `develop` (a promotion) and `hotfix/*` may open a PR against `master`. The
+  `Only develop and hotfixes may target master` step in `Lint commits` enforces it.
 
 Pull requests are merged with a **merge commit** (squash and rebase merges are disabled on this
-repository), so every commit in the branch lands on `master` — and every one of them is parsed by
+repository), so every commit in the branch lands on `develop` — and every one of them is parsed by
 release-please to work out the next version. Merge commits themselves are ignored. Tidy the branch
 history before merging; `Lint commits` will reject a non-conventional commit anywhere in it.
+
+### `master` is never merged back into `develop`
+
+This is the one rule that is easy to break and expensive to undo.
+
+`Lint commits` fails any PR whose branch contains a merge whose *merged-in* parent is already on
+the base branch (see `Reject merges of the base branch into the PR branch`, below). A promotion PR
+passes that guard because it carries only feature merges, whose merged-in parents are feature
+branches. **One `master → develop` merge commit would put a `master` commit on the merged-in side
+of `develop`'s history and fail every promotion PR from then on.**
+
+Nothing needs a back-merge anyway: every generated file is produced on `develop` and travels
+downstream with the promotion, so `develop` is never behind. If a `hotfix/*` branch has to land on
+`master` directly, cherry-pick the same change onto `develop` through a normal PR — do not merge.
+
+## Promoting a release
+
+Publishing is manual and deliberate.
+
+1. Run the **Promote develop to master** workflow (`.github/workflows/promote.yml`,
+   `workflow_dispatch`). It opens — or refreshes — the `develop → master` PR with the title
+   `chore(release): promote develop to master` and a body listing the tags about to go live.
+   Equivalent by hand:
+   `gh pr create --base master --head develop --title 'chore(release): promote develop to master'`
+2. Review it. `Validate gallery contract`, `Validate commit messages`, `Validate PR title` and
+   `Test template` all run; the gallery contract check is the one that matters, because it is the
+   last gate before the template reaches real GTM containers.
+3. Merge it with a merge commit. That push to `master` is the publication: Google polls the
+   repository and the new version appears in the gallery within 2 to 3 days. `GTM live container
+   e2e` also fires, exercising the promoted `template.tpl` in a real container.
+
+Nothing deletes `develop` on merge: `delete_branch_on_merge` is on, but the `Compliance` ruleset's
+`deletion` rule protects the branch, so GitHub skips it.
 
 ## Workflows
 
@@ -27,11 +71,11 @@ history before merging; `Lint commits` will reject a non-conventional commit any
 
   | Job | What it checks |
   | --- | --- |
-  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` — these are the ones release-please reads. Also rejects a branch that merges `master` into itself, which makes release-please prune commits from the changelog |
+  | `Validate commit messages` | every commit in the PR, against `commitlint.config.mjs` — these are the ones release-please reads. Also rejects a branch that merges its base branch into itself, which makes release-please prune commits from the changelog, and rejects a PR into `master` that is not a promotion or a `hotfix/*` |
   | `Validate PR title` | the PR title is a valid Conventional Commit — and, as below, a release trigger in its own right |
 
   **The release PR is exempt from the merge check.** release-please keeps its PR
-  current by merging `master` into its own branch every time `master` moves, so
+  current by merging `develop` into its own branch every time `develop` moves, so
   without an exemption the guard would block every release — `Validate commit
   messages` is a required status check. That is safe for the reason the guard
   exists: the branch holds only generated files, carries no contributor commits
@@ -40,21 +84,27 @@ history before merging; `Lint commits` will reject a non-conventional commit any
   so it cannot be claimed by naming a branch to match.
 
   The gallery sync PR needs no exemption: `chore/sync-metadata-<tag>` is built
-  from a fresh `master` checkout with a single commit and contains no merges.
+  from a fresh `develop` checkout with a single commit and contains no merges.
+
+  The promotion PR needs no exemption either — see
+  [`master` is never merged back into `develop`](#master-is-never-merged-back-into-develop).
 
   This is what makes automated versioning possible: `fix:` → patch, `feat:` → minor,
   `feat!:` / `BREAKING CHANGE:` → major.
 
-- **`.github/workflows/release.yml`** (`Release`) — fires on push to `master`. release-please
-  scans the commits since the last release, works out the next version, and opens (or updates)
-  a release PR that bumps `VERSION`, updates `CHANGELOG.md` and bumps
-  `.release-please-manifest.json`. Merging that PR tags the commit and publishes a GitHub
-  Release.
+- **`.github/workflows/release.yml`** (`Release`) — fires on push to `develop`, with
+  `target-branch: develop` pinned explicitly. release-please scans the commits since the last
+  release, works out the next version, and opens (or updates) a release PR that bumps `VERSION`,
+  updates `CHANGELOG.md` and bumps `.release-please-manifest.json`. Merging that PR tags the
+  commit and publishes a GitHub Release.
 
   When — and only when — a release was just published (`release_created == 'true'`), the same
-  workflow then runs `scripts/update-metadata-version.mjs` and pushes a signed
-  `chore(metadata): sync version history for <tag>` commit. That is the step that reaches the
-  gallery (see below).
+  workflow then opens the signed `chore(metadata): sync version history for <tag>` PR against
+  `develop`. That entry is what the gallery eventually reads — but only once `develop` reaches
+  `master` (see below).
+
+- **`.github/workflows/promote.yml`** (`Promote develop to master`) — `workflow_dispatch` only.
+  Opens the `develop → master` PR that publishes. It never merges.
 
 ## GTM Gallery version history
 
@@ -70,8 +120,9 @@ preserved byte for byte.
 
 **Do not add `versions:` entries by hand.**
 
-**There is no manual publish step.** Merging the sync PR *is* the publication: Google polls the
-repository and the new version appears in the gallery
+**There is one manual publish step, and only one: merging the promotion PR.** The sync PR only
+stages the entry on `develop`. Merging the `develop → master` promotion *is* the publication:
+Google polls the repository's default branch and the new version appears in the gallery
 [typically within 2 to 3 days](https://developers.google.com/tag-platform/tag-manager/templates/gallery).
 There is no author dashboard and no gallery UI to push a version from — which is also why the
 template has no install counts, ratings or review-status notifications (ENG-13164), and why a
@@ -136,14 +187,14 @@ organisation forbids `GITHUB_TOKEN` from creating or approving pull requests, so
 cannot open its release PR without a real bot account. That is what broke the first attempt
 (run `27350014158`).
 
-`master` also enforces **signed commits**, so the metadata sync commit is GPG-signed with the
-bot's key before it is pushed.
+The `Compliance` ruleset enforces **signed commits** on `master` *and* `develop`, so the metadata
+sync commit is GPG-signed with the bot's key before it is pushed.
 
 ### The release PR is re-signed too
 
 release-please authenticates with a PAT, and the release commit it creates through the API is
-**not signed**. Since `master` moved from classic branch protection to rulesets, that makes the
-release PR unmergeable by anyone: `required_signatures` lives on the `Compliance` ruleset, which
+**not signed**. Since this repository moved from classic branch protection to rulesets, that makes
+the release PR unmergeable by anyone: `required_signatures` lives on the `Compliance` ruleset, which
 has **no bypass actor**, and rulesets grant no implicit admin bypass. v2.1.2 shipped only because
 classic protection still gave admins one; v2.1.3 was the first release to meet the rule as
 written, and it was blocked.
@@ -154,16 +205,16 @@ that the sync PR cannot merge while `Validate gallery contract` is failing.
 
 Instead the `Sign the release PR commit` step rebuilds the release branch as a single commit
 signed with the bot's GPG key, replaying `VERSION`, `CHANGELOG.md` and
-`.release-please-manifest.json` onto `master`.
+`.release-please-manifest.json` onto `develop`.
 
 It is gated on a `Detect an unsigned release PR` step that asks GitHub whether an open
 `release-please--*` PR exists and whether all of its commits are verified — **not** on
 release-please's own `pr` output. That output is set only when the action creates or updates a PR
 *in that run*, so pushing a non-releasing `ci` / `docs` / `chore` commit leaves it empty and an
 already-unsigned PR would never be repaired. The verified check also means a branch that is
-already signed is not force-pushed, and its checks not re-run, on every push to `master`. The branch carries nothing else and release-please
+already signed is not force-pushed, and its checks not re-run, on every push to `develop`. The branch carries nothing else and release-please
 rewrites it from scratch each run, so replacing it wholesale is safe — the same pattern the sync
-PR branch uses. It also drops the `Merge branch 'master' into release-please--…` commits the
+PR branch uses. It also drops the `Merge branch 'develop' into release-please--…` commits the
 action leaves behind, which is why those need the `Lint commits` exemption only as a backstop.
 
 | Secret | Used for | Source |

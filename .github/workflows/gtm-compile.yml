@@ -16,13 +16,19 @@ name: GTM compile check
 # Does not gate merges. It needs credentials, so it cannot run on pull requests
 # from forks, and a required check that is structurally unavailable to some
 # contributors would block them permanently.
-# Pull requests only, deliberately. On master, gtm-e2e.yml publishes the template
-# and create_version fails loud on compilerError — a stronger check than
-# quick_preview, since it actually produces a version. Running both there would be
-# redundant, and because they share the gtm-api concurrency group it also meant one
-# was cancelled while queued behind the other.
+# Pull requests into develop only, deliberately. On master, gtm-e2e.yml publishes
+# the template and create_version fails loud on compilerError — a stronger check
+# than quick_preview, since it actually produces a version. Running both there
+# would be redundant, and because they share the gtm-api concurrency group it also
+# meant one was cancelled while queued behind the other.
+#
+# The base filter keeps the develop -> master promotion PR out too: its template.tpl
+# was already compiled on the PRs that built develop, and re-compiling it would
+# queue against the publish that the promotion merge is about to trigger.
 on:
   pull_request:
+    branches:
+      - develop
     types: [opened, reopened, synchronize]
 
 permissions:

@@ -605,6 +605,12 @@ const setInWindow = require('setInWindow');
 const copyFromWindow = require('copyFromWindow');
 const makeNumber = require('makeNumber');
 const decodeUriComponent = require('decodeUriComponent');
+// Reads GTM's own consent model back, to notice when something else on the page
+// has overwritten what this tag set. Read-only, and access_consent already grants
+// read on all seven types, so this asks for no new permission - it puts a grant
+// that was declared and unused to work. callLater needs no permission at all.
+const isConsentGranted = require('isConsentGranted');
+const callLater = require('callLater');
 
 let consentUpdateAlreadySent = false;
 
@@ -1106,6 +1112,11 @@ if (!projectIdBlank && !isProjectId(projectId)) {
 // on the page, and they do not depend on which flow wins.
 let replayEarlyConsent = () => {};
 
+// Assigned the same way and for the same reason as replayEarlyConsent above: the
+// body needs allowedConsentTypes, which lives inside the Consent Mode block, but
+// the resolver path has to call it from outside that block.
+let auditConsentState = () => {};
+
 if(data.isComoEnabled){
 
   // The Region column is TEXT, but TEXT accepts a GTM variable, and a lookup that
@@ -1205,6 +1216,62 @@ const parseCommandData = (settings) => {
   return commandData;
 };
 
+// What this tag has told GTM about the visitor in front of it, type by type, as
+// the last write left it. Only claims that apply to EVERY visitor go in here -
+// see rememberClaim - so anything that later disagrees with it is genuine drift
+// rather than a region this visitor is not in.
+const claimedConsentState = {};
+
+// Records the consent types of one command, ignoring region and wait_for_update.
+// Later writes win, which is what makes an early consent update supersede the
+// default it replaces.
+const rememberClaim = (command) => {
+  for (const claimKey in command) {
+    if (allowedConsentTypes.indexOf(claimKey) !== -1) {
+      claimedConsentState[claimKey] = command[claimKey];
+    }
+  }
+};
+
+// The value each region row gives a type, and whether two of them disagree. Used
+// once the whole table has been read, to drop the types whose value depends on
+// where the visitor is - see forgetRegionDependentClaims.
+const regionRowValues = {};
+const regionRowConflicts = {};
+
+const noteRegionRow = (command) => {
+  for (const regionKey in command) {
+    if (allowedConsentTypes.indexOf(regionKey) === -1) {
+      continue;
+    }
+    if (regionRowValues[regionKey] !== undefined &&
+        regionRowValues[regionKey] !== command[regionKey]) {
+      regionRowConflicts[regionKey] = true;
+    }
+    regionRowValues[regionKey] = command[regionKey];
+  }
+};
+
+// A region-less row is a claim about every visitor - until a region row overrides
+// it for some of them. Google applies the most specific matching region default,
+// so with a global row granting analytics_storage and an FR row denying it, a
+// visitor in FR legitimately reads back denied, and auditing that type would
+// report drift and blame the SDK for something the publisher configured.
+//
+// Only the types whose value is the SAME everywhere survive: those are still a
+// claim about this visitor whichever region they are in. A type that two region
+// rows disagree about goes too, even if one of them matches the global row.
+//
+// Runs after the whole table has been read, because a region row may be listed
+// before the region-less row it qualifies.
+const forgetRegionDependentClaims = () => {
+  for (const seenKey in regionRowValues) {
+    if (regionRowConflicts[seenKey] || regionRowValues[seenKey] !== claimedConsentState[seenKey]) {
+      claimedConsentState[seenKey] = undefined;
+    }
+  }
+};
+
 // The half of the Consent Mode work that never waits for anything: the gtagSet
 // options and the defaults. These have to precede every other tag on the page,
 // and nothing in them depends on which flow or configuration the visitor ends up
@@ -1250,14 +1317,16 @@ const applyConsentDefaults = () => {
   const defaultRows = (!!rawDefaultRows && typeof rawDefaultRows === 'object' &&
     typeof rawDefaultRows.length === 'number') ? rawDefaultRows : [];
   if (defaultRows.length === 0) {
-    setDefaultConsentState({
+    const fallbackDefaults = {
       ad_storage: 'denied',
       analytics_storage: 'denied',
       ad_user_data: 'denied',
       ad_personalization: 'denied',
       security_storage: 'granted',
       wait_for_update: waitForUpdate
-    });
+    };
+    setDefaultConsentState(fallbackDefaults);
+    rememberClaim(fallbackDefaults);
   }
   // A row whose Region is blank applies everywhere; one with regions applies only
   // there. A table made entirely of region rows therefore sends no default at all
@@ -1279,11 +1348,19 @@ const applyConsentDefaults = () => {
     const defaultData = parseCommandData(settings);
     if (defaultData.region === undefined) {
       regionlessRowSeen = true;
+      // Only a region-less row is a claim about THIS visitor. A row with regions
+      // applies to some visitors and not others, and the template has no way to
+      // know which - auditing one would report drift at every visitor outside it,
+      // and a diagnostic that cries wolf is worse than none.
+      rememberClaim(defaultData);
+    } else {
+      noteRegionRow(defaultData);
     }
   // wait_for_update (ms) allows for time to receive visitor choices from the CMP
     defaultData.wait_for_update = waitForUpdate;
     setDefaultConsentState(defaultData);
   }
+  forgetRegionDependentClaims();
   if (defaultRows.length > 0 && !regionlessRowSeen) {
     logToConsole('Axeptio GTM tag: no region-less default row; visitors outside the listed regions get Google\'s default of granted');
   }
@@ -1473,6 +1550,7 @@ replayEarlyConsent = (resolvedProduct, resolvedCookiesVersion, versionIsId) => {
       if (Object.keys(consentModeStates).length > 0) {
         logToConsole('Axeptio GTM tag: early consent update from cookie');
         updateConsentState(consentModeStates);
+        rememberClaim(consentModeStates);
         consentUpdateAlreadySent = true;
       } else {
         // A Consent Mode block that survived the checks above but says nothing
@@ -1486,6 +1564,53 @@ replayEarlyConsent = (resolvedProduct, resolvedCookiesVersion, versionIsId) => {
       }
     }
   }
+};
+
+// Reads GTM's consent model back and says so in Preview when it no longer matches
+// what this tag set. It changes nothing: every branch logs and returns.
+//
+// This is the diagnostic a reported failure needed. The template wrote
+// analytics_storage and ad_storage as granted, the Axeptio SDK stamped a global
+// all-denied default over the top a few hundred milliseconds later, and nothing
+// anywhere said so - the tag looked green and the customer found it. GTM's own
+// state is the only place that overwrite is visible from inside the sandbox.
+//
+// callLater is load-bearing, not decoration. GTM applies consent writes at event
+// boundaries, so reading in the same execution returns the value from before this
+// tag ran and every audit would report drift that is really just staleness.
+auditConsentState = () => {
+  callLater(() => {
+    const drifted = [];
+    let audited = 0;
+    for (const auditKey in claimedConsentState) {
+      // Cleared by forgetRegionDependentClaims: the key is still enumerable, but
+      // the tag has no claim about this visitor for it.
+      if (claimedConsentState[auditKey] === undefined) {
+        continue;
+      }
+      // isConsentGranted answers with a boolean, and GTM has no third state to
+      // report: a type nobody set reads as granted, which is Google's own default
+      // and exactly what a caller should act on. Types this tag never claimed are
+      // not in claimedConsentState, so they are never compared.
+      audited += 1;
+      const actual = isConsentGranted(auditKey) ? 'granted' : 'denied';
+      if (actual !== claimedConsentState[auditKey]) {
+        drifted.push(auditKey + ' is ' + actual + ' but this tag set ' + claimedConsentState[auditKey]);
+      }
+    }
+    if (audited === 0) {
+      // Not the same thing as agreement, and saying "still matches" here would be a
+      // clean bill of health for a comparison that never happened. Reached when the
+      // table is region-only, or when every claim it made turned out to depend on
+      // where the visitor is.
+      logToConsole('Axeptio GTM tag: no Consent Mode default applies to every visitor, so there is nothing to check the Google consent state against');
+    } else if (drifted.length === 0) {
+      logToConsole('Axeptio GTM tag: Google consent state still matches this tag configuration');
+    } else {
+      logToConsole('Axeptio GTM tag: Google consent state no longer matches this tag configuration; ' +
+        drifted.join('; ') + '; another tag or the Axeptio SDK has overwritten it');
+    }
+  });
 };
 
 applyConsentDefaults();
@@ -1674,7 +1799,22 @@ const loadSdk = (resolvedProduct) => {
     'https://static.axept.io/sdk.js';
 
   if (queryPermission('inject_script', sdkUrl)) {
-    injectScript(sdkUrl, data.gtmOnSuccess, data.gtmOnFailure);
+    // The audit hangs off the load callback rather than running inline after the
+    // defaults, and the difference is the whole point of it. injectScript calls
+    // this back once the bundle has finished EXECUTING, so anything the SDK does
+    // as it boots - including pushing a Consent Mode default of its own over the
+    // top of ours - has already happened. An audit scheduled earlier would fire at
+    // the next event boundary, hundreds of milliseconds before the SDK boots, read
+    // back the tag's own writes, report that everything matches, and never once
+    // catch the overwrite it exists to catch.
+    //
+    // gtmOnSuccess goes first: the tag's completion signal is not something a
+    // diagnostic gets to delay. auditConsentState only schedules, so it returns
+    // immediately either way.
+    injectScript(sdkUrl, () => {
+      data.gtmOnSuccess();
+      auditConsentState();
+    }, data.gtmOnFailure);
   } else {
     data.gtmOnFailure();
   }
@@ -2990,6 +3130,331 @@ scenarios:
       security_storage: 'denied',
       wait_for_update: 500
     });
+- name: A granted core type reaches setDefaultConsentState
+  code: |-
+    // The shape from a reported failure (gtm-0y2). Every other default-row scenario denies the
+    // core types, so nothing covered a publisher who deliberately grants one - which
+    // is exactly the configuration the Axeptio SDK was found overriding.
+    let applied;
+    mock('setDefaultConsentState', (value) => { applied = value; });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{
+        region: '',
+        analytics_storage: 'granted',
+        ad_storage: 'granted',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied'
+      }]
+    });
+
+    assertThat(applied).isEqualTo({
+      analytics_storage: 'granted',
+      ad_storage: 'granted',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      wait_for_update: 500
+    });
+- name: One region less row produces exactly one default call
+  code: |-
+    // The count, not just the payload. Nothing asserted how many defaults a single
+    // run sends, so a second call sneaking in - the failure mode the whole gtm-0y2
+    // investigation is about, if it ever came from our side - would go unnoticed.
+    const applied = [];
+    mock('setDefaultConsentState', (value) => { applied.push(value); });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [{region: '', ad_storage: 'denied'}]
+    });
+
+    assertThat(applied.length).isEqualTo(1);
+- name: Two default rows produce exactly two default calls
+  code: |-
+    const applied = [];
+    mock('setDefaultConsentState', (value) => { applied.push(value); });
+
+    runCode({
+      isComoEnabled: true,
+      defaultSettings: [
+        {region: '', ad_storage: 'denied'},
+        {region: 'FR', ad_storage: 'granted'}
+      ]
+    });
+
+    assertThat(applied.length).isEqualTo(2);
+    assertThat(applied[1].region).isEqualTo(['FR']);
+- name: The consent audit reports a type another tag overrode
+  code: |-
+    // The diagnostic gtm-0y2 needed. callLater is not drained by the runner, and
+    // injectScript never calls back on its own, so both are driven by hand here -
+    // the same idiom works unchanged in the GTM UI.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: '', analytics_storage: 'granted'}]
+    });
+    deferred();
+
+    let drift;
+    for (let i = 0; i < logged.length; i++) {
+      if (logged[i].indexOf('no longer matches') !== -1) { drift = logged[i]; }
+    }
+    assertThat(drift).isDefined();
+    assertThat(drift).contains('analytics_storage is denied but this tag set granted');
+- name: The consent audit stays quiet when the state matches
+  code: |-
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => true);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: '', analytics_storage: 'granted'}]
+    });
+    deferred();
+
+    let drift;
+    let match;
+    for (let i = 0; i < logged.length; i++) {
+      if (logged[i].indexOf('no longer matches') !== -1) { drift = logged[i]; }
+      if (logged[i].indexOf('still matches') !== -1) { match = logged[i]; }
+    }
+    assertThat(drift).isUndefined();
+    assertThat(match).isDefined();
+- name: The consent audit ignores region rows
+  code: |-
+    // A region row is a claim about SOME visitors, and the template cannot know
+    // whether this one is among them. Auditing it would report drift at every
+    // visitor outside the region, and a diagnostic that cries wolf is worse than
+    // none - so a region-only table produces no drift line even when GTM disagrees.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: 'FR', analytics_storage: 'granted'}]
+    });
+    deferred();
+
+    for (let i = 0; i < logged.length; i++) {
+      assertThat(logged[i].indexOf('no longer matches')).isEqualTo(-1);
+    }
+- name: The consent audit skips a type a region row overrides
+  code: |-
+    // Google applies the most specific matching region default, so with a global
+    // row granting analytics_storage and an FR row denying it, a visitor in FR
+    // legitimately reads back denied. Auditing that type would report drift and
+    // blame the SDK for something the publisher configured. ad_storage is denied in
+    // both rows, so it stays auditable and proves the whole audit was not simply
+    // switched off by the presence of a region row.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [
+        {region: '', analytics_storage: 'granted', ad_storage: 'granted'},
+        {region: 'FR', analytics_storage: 'denied', ad_storage: 'granted'}
+      ]
+    });
+    deferred();
+
+    let drift;
+    for (let i = 0; i < logged.length; i++) {
+      if (logged[i].indexOf('no longer matches') !== -1) { drift = logged[i]; }
+    }
+    assertThat(drift).isDefined();
+    assertThat(drift.indexOf('analytics_storage')).isEqualTo(-1);
+    assertThat(drift).contains('ad_storage is denied but this tag set granted');
+- name: The consent audit skips a type two region rows disagree about
+  code: |-
+    // Neither region row matches the global claim consistently, so the type depends
+    // on where the visitor is and no claim about it survives.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [
+        {region: '', analytics_storage: 'granted'},
+        {region: 'FR', analytics_storage: 'granted'},
+        {region: 'DE', analytics_storage: 'denied'}
+      ]
+    });
+    deferred();
+
+    for (let i = 0; i < logged.length; i++) {
+      assertThat(logged[i].indexOf('no longer matches')).isEqualTo(-1);
+    }
+- name: A region row matching the global row leaves the claim auditable
+  code: |-
+    // The region row says the same thing as the global one, so the value does not
+    // depend on where the visitor is and the type stays worth auditing.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [
+        {region: '', analytics_storage: 'granted'},
+        {region: 'FR', analytics_storage: 'granted'}
+      ]
+    });
+    deferred();
+
+    let drift;
+    for (let i = 0; i < logged.length; i++) {
+      if (logged[i].indexOf('no longer matches') !== -1) { drift = logged[i]; }
+    }
+    assertThat(drift).isDefined();
+    assertThat(drift).contains('analytics_storage is denied but this tag set granted');
+- name: An early consent update restores a region dependent claim
+  code: |-
+    // updateConsentState applies globally and overrides every default, region rows
+    // included, so a type the visitor has actually answered for is auditable again
+    // however the table was configured.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+    mock('getCookieValues', () => [JSON.stringify({
+      $$completed: true,
+      $$googleConsentMode: {analytics_storage: 'granted'}
+    })]);
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [
+        {region: '', analytics_storage: 'granted'},
+        {region: 'FR', analytics_storage: 'denied'}
+      ]
+    });
+    deferred();
+
+    let drift;
+    for (let i = 0; i < logged.length; i++) {
+      if (logged[i].indexOf('no longer matches') !== -1) { drift = logged[i]; }
+    }
+    assertThat(drift).isDefined();
+    assertThat(drift).contains('analytics_storage is denied but this tag set granted');
+- name: A region only table reports nothing to audit rather than agreement
+  code: |-
+    // "still matches" would be a clean bill of health for a comparison that never
+    // happened: a region-only table makes no claim about this visitor, so there is
+    // nothing to compare and saying so is the honest line.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: 'FR', analytics_storage: 'granted'}]
+    });
+    deferred();
+
+    let nothing;
+    for (let i = 0; i < logged.length; i++) {
+      assertThat(logged[i].indexOf('still matches')).isEqualTo(-1);
+      assertThat(logged[i].indexOf('no longer matches')).isEqualTo(-1);
+      if (logged[i].indexOf('nothing to check') !== -1) { nothing = logged[i]; }
+    }
+    assertThat(nothing).isDefined();
+- name: A table whose only claim is region dependent reports nothing to audit
+  code: |-
+    // The claim was made and then withdrawn by the region reconciliation, which is
+    // the same position as never having made one.
+    let deferred;
+    const logged = [];
+    mock('callLater', (fn) => { deferred = fn; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+    mock('isConsentGranted', () => false);
+    mock('logToConsole', (message) => { logged.push(message); });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [
+        {region: '', analytics_storage: 'granted'},
+        {region: 'FR', analytics_storage: 'denied'}
+      ]
+    });
+    deferred();
+
+    let nothing;
+    for (let i = 0; i < logged.length; i++) {
+      assertThat(logged[i].indexOf('still matches')).isEqualTo(-1);
+      if (logged[i].indexOf('nothing to check') !== -1) { nothing = logged[i]; }
+    }
+    assertThat(nothing).isDefined();
+- name: The consent audit runs from the SDK load callback
+  code: |-
+    // Not inline after the defaults. callLater fires at the next event boundary,
+    // long before an injected bundle has booted, so an audit scheduled any earlier
+    // would read back the tag's own writes and never see the overwrite it exists to
+    // catch. Nothing is scheduled until injectScript calls back.
+    let scheduled = false;
+    let onLoad;
+    mock('callLater', () => { scheduled = true; });
+    mock('injectScript', (url, onSuccess) => { onLoad = onSuccess; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: '', analytics_storage: 'granted'}]
+    });
+
+    assertThat(scheduled).isFalse();
+    onLoad();
+    assertThat(scheduled).isTrue();
+- name: Consent Mode off schedules no audit
+  code: |-
+    let scheduled = false;
+    mock('callLater', () => { scheduled = true; });
+    mock('injectScript', (url, onSuccess) => { onSuccess(); });
+
+    runCode({id: '6a22da4da7d365c1e246783d', isComoEnabled: false});
+
+    assertThat(scheduled).isFalse();
 - name: Wait for update is configurable
   code: |-
     const applied = [];

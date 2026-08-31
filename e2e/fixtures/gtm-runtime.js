@@ -48,6 +48,40 @@ export function createRuntime(permissions, options = {}) {
   // suite asserts on this array the way a Google tag would read it.
   const dataLayer = (window.dataLayer = window.dataLayer || []);
 
+  // GTM's consent model, which the unit layer has no equivalent of: the state
+  // isConsentGranted reads back. Every type starts absent, and an absent type reads
+  // as GRANTED — Google's own rule for a type nobody set a default for.
+  //
+  // It is fed from two sources on purpose. The template's own
+  // setDefaultConsentState / updateConsentState calls below are the obvious one.
+  // The other is gtag-style `arguments` entries pushed into the data layer by
+  // anything else on the page, which is how a real page's consent commands reach
+  // GTM — and it is the whole reason this model exists: without it a stubbed SDK
+  // pushing its own default is inert, and a test that "reproduces" the override
+  // proves nothing. See e2e/fixtures/stub-sdk.js.
+  const consentModel = {};
+  const applyConsent = (state) => {
+    for (const type of Object.keys(state || {})) {
+      if (type === 'region' || type === 'wait_for_update') continue;
+      consentModel[type] = state[type];
+    }
+  };
+
+  // Drains the gtag-style consent commands the page has pushed. Called on read
+  // rather than on push: nothing can subscribe to an Array.prototype.push, and a
+  // read-time drain needs no such hook to stay correct.
+  let drained = 0;
+  const drainGtagConsent = () => {
+    for (; drained < dataLayer.length; drained += 1) {
+      const entry = dataLayer[drained];
+      if (Object.prototype.toString.call(entry) !== '[object Arguments]') continue;
+      const args = Array.from(entry);
+      if (args[0] === 'consent' && (args[1] === 'default' || args[1] === 'update')) {
+        applyConsent(args[2]);
+      }
+    }
+  };
+
   const api = {
     JSON: gtmJson,
     Object,
@@ -133,12 +167,33 @@ export function createRuntime(permissions, options = {}) {
       const denied = checker.unwritableConsentTypes(state);
       if (denied.length > 0) throw new PermissionError('access_consent', denied.join(', '));
       dataLayer.push({ event: 'consent.default', state });
+      applyConsent(state);
     },
     updateConsentState: (state) => {
       record('updateConsentState', [state]);
       const denied = checker.unwritableConsentTypes(state);
       if (denied.length > 0) throw new PermissionError('access_consent', denied.join(', '));
       dataLayer.push({ event: 'consent.update', state });
+      applyConsent(state);
+    },
+
+    // Read-only, and needs READ on the type it asks about rather than write. A type
+    // nobody has set reads as granted, which is Google's documented default and the
+    // answer a caller has to be able to act on.
+    isConsentGranted: (type) => {
+      record('isConsentGranted', [type]);
+      if (!checker.consentRead(type)) throw new PermissionError('access_consent', type);
+      drainGtagConsent();
+      return consentModel[type] !== 'denied';
+    },
+
+    // A real deferral, not a synchronous call. GTM applies consent writes at event
+    // boundaries, so a callLater that ran inline would let a template read back its
+    // own writes in the same execution — the exact mistake this API exists to avoid,
+    // and the suite would then pass on behaviour that fails in production.
+    callLater: (fn) => {
+      record('callLater', []);
+      setTimeout(fn, 0);
     },
   };
 
@@ -147,5 +202,15 @@ export function createRuntime(permissions, options = {}) {
     return api[name];
   };
 
-  return { require, calls, checker };
+  // consentState and calls are read AFTER runTemplate returns, because the two
+  // things worth asserting here both happen later: the SDK stub boots on script
+  // load, and the template's audit runs on a callLater after that. A snapshot
+  // taken at return time would miss both — the same reason window.sdkBoot and
+  // window.gtmCallbacks exist in the harness.
+  const consentState = () => {
+    drainGtagConsent();
+    return Object.assign({}, consentModel);
+  };
+
+  return { require, calls, checker, consentState };
 }

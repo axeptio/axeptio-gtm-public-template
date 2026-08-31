@@ -371,6 +371,14 @@ test('Brands: the container fires the tag and the real SDK boots', async ({ page
   // The SDK read the settings and mounted. This is the assertion the hermetic
   // suite can only simulate, because it stubs the bundle.
   await expect(page.locator('#axeptio_overlay')).toBeAttached({ timeout: BOOT_TIMEOUT });
+
+  // gtagSet DOES reach the dataLayer, unlike the two consent APIs — the correction
+  // the gtagConsentCalls comment above now records. developer_id.dNGFkYj is Axeptio's
+  // own Google developer id and nothing but this template sets it, so finding it here
+  // attributes the entry beyond doubt.
+  const sets = await gtagSetCalls(page);
+  expect(sets.map((args) => args[1]), `gtag set calls: ${JSON.stringify(sets)}`)
+    .toContain('developer_id.dNGFkYj');
 });
 
 test('Publishers: the TCF build boots and exposes the IAB API', async ({ page }) => {
@@ -416,17 +424,39 @@ test('the two fixtures load different bundles', async ({ page }) => {
 // Array.from before the value crosses the page boundary: Playwright serialises a
 // bare Arguments object as `{}`.
 //
-// What is NOT counted here is the point. setDefaultConsentState, updateConsentState
-// and gtagSet all write to GTM's internal consent model, never to the dataLayer, so
-// nothing the template does appears below — checked by loading both fixtures with
-// static.axept.io blocked, where the template still ran (Brands still reported
-// consentUpdateAlreadySent) and the dataLayer held no Arguments entry at all. Every
-// entry counted is therefore the SDK's, on top of whatever the template already set.
+// What is NOT counted here is the point. setDefaultConsentState and
+// updateConsentState write to GTM's internal consent model, never to the dataLayer,
+// so no consent command the template issues appears below — checked by loading both
+// fixtures with static.axept.io blocked, where the template still ran (Brands still
+// reported consentUpdateAlreadySent) and the dataLayer held no `consent` Arguments
+// entry at all. Every entry counted is therefore the SDK's, on top of whatever the
+// template already set.
+//
+// gtagSet is NOT in that group, and an earlier version of this comment wrongly said
+// it was. It does reach the dataLayer, as `["set", key, value]` Arguments — observed
+// on a live customer page carrying this template, which held
+// ["set","developer_id.dNGFkYj",true] and ["set","ads_data_redaction",false], both of
+// them ours (template.tpl sets the developer id and reads ads_data_redaction from the
+// tag's own configuration). It does not affect the counts here because this helper
+// filters on args[0] === 'consent', but the claim underpins how the consent counts
+// below are attributed, so the accurate half is worth stating precisely.
+// gtagSetCalls() pins the correction below.
 async function gtagConsentCalls(page, command) {
   return page.evaluate((wanted) => Array.from(window.dataLayer || [])
     .filter((entry) => Object.prototype.toString.call(entry) === '[object Arguments]')
     .map((entry) => Array.from(entry))
     .filter((args) => args[0] === 'consent' && args[1] === wanted), command);
+}
+
+// The `gtag('set', …)` calls the page made. Same Arguments shape as the consent
+// commands above, and the reason the comment there distinguishes gtagSet from the
+// two consent APIs: this one really does reach the dataLayer. Asserted rather than
+// merely described, because prose no test holds is how the original claim drifted.
+async function gtagSetCalls(page) {
+  return page.evaluate(() => Array.from(window.dataLayer || [])
+    .filter((entry) => Object.prototype.toString.call(entry) === '[object Arguments]')
+    .map((entry) => Array.from(entry))
+    .filter((args) => args[0] === 'set'));
 }
 
 // Counting calls means counting a number that only ever goes up, so there is no

@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.7.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.6.0...v2.7.0) (2026-08-31)
+
+
+### Features
+
+* **template:** warn in Preview when Google consent state stops matching ([6040276](https://github.com/axeptio/axeptio-gtm-public-template/commit/6040276362a19185c6fe39b3e15297718f4456ce))
+* **template:** warn in Preview when Google consent state stops matching ([db2d31e](https://github.com/axeptio/axeptio-gtm-public-template/commit/db2d31e245e04744de7e884c8b397975c3565c01))
+
 ## [2.6.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.5.0...v2.6.0) (2026-08-28)
 
 

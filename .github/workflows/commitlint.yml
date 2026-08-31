@@ -15,8 +15,8 @@ jobs:
     # The PR title is a release artifact, not hygiene. The repo is set to
     # merge_commit_message: PR_TITLE, so GitHub writes the title into the *body*
     # of the merge commit and release-please parses it like any other commit: it
-    # adds its own CHANGELOG line, and a PR titled `fix:` cuts a gallery release
-    # even when none of its commits do. See docs/release-automation.md.
+    # adds its own CHANGELOG line, and a PR into develop titled `fix:` cuts a
+    # release even when none of its commits do. See docs/release-automation.md.
     name: Validate PR title
     runs-on: ubuntu-latest
     steps:
@@ -54,7 +54,63 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Merging master INTO a branch makes release-please drop commits from the
+      # master is the published branch: a push to it is what puts template.tpl in
+      # front of every GTM user who installed the template. Work reaches it by
+      # being promoted from develop, never by being merged into it directly, so a
+      # PR opened against master by habit is caught here rather than at review.
+      #
+      # This lives in the `commits` job for the same reason the merge guard below
+      # does: `Validate commit messages` is already a required status check on
+      # master, so the guard enforces without touching the rulesets.
+      #
+      # hotfix/* is an escape hatch for repository infrastructure only — a broken
+      # workflow that has to be fixed on master before a promotion can run. The
+      # same change still has to reach develop, by cherry-pick through a normal
+      # PR: merging master back into develop would break every future promotion
+      # PR against the guard below.
+      #
+      # The head repository is checked as well as the branch name. `head.ref` is a
+      # bare branch name with no owner, so a fork can name its branch `develop` (or
+      # `hotfix/anything`) and match on the name alone. Both allowed cases are
+      # same-repo by construction — a promotion pushes the real `develop`, and a
+      # hotfix is repository infrastructure — so a fork head targeting master is
+      # never legitimate.
+      - name: Only develop and hotfixes may target master
+        if: ${{ github.event.pull_request.base.ref == 'master' }}
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          reject() {
+            echo "$1" >&2
+            echo >&2
+            echo "master publishes to the GTM Community Template Gallery; develop is" >&2
+            echo "where work is integrated and released. See docs/release-automation.md." >&2
+            exit 1
+          }
+
+          case "$HEAD_REF" in
+            develop | hotfix/*) ;;
+            *)
+              reject "$(printf '%s\n%s\n%s' \
+                "Pull requests into master come from develop (a promotion) or hotfix/*." \
+                "This one is from '$HEAD_REF'. Re-target it at develop:" \
+                "  gh pr edit <number> --base develop")"
+              ;;
+          esac
+
+          if [ "$HEAD_REPO" != "$THIS_REPO" ]; then
+            reject "$(printf '%s\n%s' \
+              "Only branches in $THIS_REPO may target master; this head is $HEAD_REPO." \
+              "A fork can name its branch 'develop', so the name alone is not enough.")"
+          fi
+
+          echo "$HEAD_REPO:$HEAD_REF may target master."
+
+      # Merging the base branch INTO a branch makes release-please drop commits from the
       # changelog: its traversal prunes at the merge that pulls already-released
       # history back in. That happened for v1.1.0 — 3 of the 5 commits PR #36
       # landed never reached CHANGELOG.md, and that section becomes the GTM
@@ -63,22 +119,26 @@ jobs:
       #
       # This lives in the `commits` job rather than a job of its own so it is
       # enforcing straight away: `Validate commit messages` is already a
-      # required status check on master.
+      # required status check on master and develop.
       #
       # Merges of *other* branches are left alone; only a parent that is already
-      # on the base branch trips this.
+      # on the base branch trips this. That is what lets a develop -> master
+      # promotion PR through: it is made of feature merges whose merged-in
+      # parents are feature branches, never commits already on master. The same
+      # rule is why master must never be merged back into develop — one such
+      # merge would fail every promotion PR from then on.
       #
       # release-please is exempt. Its action keeps the release PR current by
-      # merging master into its own branch every time master moves, so the guard
-      # blocks the release outright — `Validate commit messages` is a required
-      # check. The exemption is safe for the reason the guard exists: that branch
+      # merging develop into its own branch every time develop moves, so the
+      # guard blocks the release outright — `Validate commit messages` is a
+      # required check. The exemption is safe for the reason the guard exists: that branch
       # holds only generated files (VERSION, CHANGELOG.md, the manifest), carries
       # no contributor commits that could be pruned, and its changelog is
       # computed before the merge, not after. Scoped to the bot's own branch so a
       # contributor cannot opt out by naming a branch `release-please--…`.
       #
       # The gallery sync PR is unaffected: release.yml builds
-      # `chore/sync-metadata-<tag>` from a fresh master checkout with a single
+      # `chore/sync-metadata-<tag>` from a fresh develop checkout with a single
       # commit, so it contains no merge commits at all.
       - name: Reject merges of the base branch into the PR branch
         if: "${{ !(github.event.pull_request.user.login == 'axeptio-bot' && startsWith(github.head_ref, 'release-please--')) }}"
