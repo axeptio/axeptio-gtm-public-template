@@ -77,7 +77,8 @@ which imposes requirements on the repository itself — not just on the template
 Google **silently delists the template** a couple of days later, with no notification on the pull
 request and no submission-status page to check.
 
-A CI check, `Validate gallery contract`, runs on every pull request and on pushes to `master`. Run
+A CI check, `Validate gallery contract`, runs on every pull request and on pushes to `develop`
+and `master`. Run
 it yourself before touching `LICENSE`, `metadata.yaml` or `template.tpl`:
 
 ```bash
@@ -90,8 +91,25 @@ It reports every violation at once. The rules most easily broken by accident:
 - **`LICENSE` must contain *only* Apache 2.0.** Not "Apache 2.0 plus a notice" — only. Changing it
   removes the template from the gallery, which is what happened in SUP-1008.
 - **`___INFO___` must declare `categories`** — 1 to 3 values from Google's list, most relevant first.
-- **`versions:` entries must be real commits on `master`, newest first**, with the `# Latest version`
+- **`versions:` entries must be real commits on the branch, newest first**, with the `# Latest version`
   marker on the top entry. Never edit this list by hand; it is generated on release.
+
+## Which branch to target
+
+**Branch from `develop` and open your pull request against `develop`.** That is where work is
+integrated and where releases are cut.
+
+`master` is the *published* branch: the GTM Community Template Gallery reads `template.tpl`,
+`metadata.yaml` and `LICENSE` from it, so a push to `master` puts your change in front of every
+site that installed the tag. It is reached only by promoting `develop`, and CI will fail a pull
+request opened against `master` from anything but `develop` or a `hotfix/*` branch. If you opened
+one by habit, re-target it — no need to start over:
+
+```
+gh pr edit <number> --base develop
+```
+
+See [docs/release-automation.md](docs/release-automation.md) for the full flow.
 
 ## Commit & pull request conventions
 
@@ -133,7 +151,7 @@ subject is published on the public listing.
 A breaking change is signalled by a `!` after the type (e.g. `feat!: ...`) or a
 `BREAKING CHANGE:` footer, and triggers a major bump.
 
-**Suggested scopes:** `template`, `metadata`, `docs`, `ci`.
+**Suggested scopes:** `template`, `metadata`, `docs`, `ci`, `release`.
 
 Examples:
 
@@ -146,13 +164,13 @@ docs: clarify the import steps
 **Important notes**
 
 - Pull requests are merged with a **merge commit** (squash and rebase are
-  disabled), so **every individual commit** lands on `master` and is parsed by
+  disabled), so **every individual commit** lands on `develop` and is parsed by
   release-please. The `Lint commits` CI check lints them all — a stray
   `wip: fixup` in your branch will fail the check, so tidy the history before
   requesting review.
-- **Rebase onto `master`; do not merge `master` into your branch.** `Lint
-  commits` fails a branch containing a `Merge branch 'master' into …` commit.
-  Use `git fetch origin master && git rebase origin/master` to pick up new
+- **Rebase onto `develop`; do not merge `develop` into your branch.** `Lint
+  commits` fails a branch containing a `Merge branch 'develop' into …` commit.
+  Use `git fetch origin develop && git rebase origin/develop` to pick up new
   changes or resolve conflicts.
 
   This is not style policing. release-please's traversal prunes at a merge that

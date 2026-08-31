@@ -66,7 +66,7 @@ the repository variables via `gh`, and mints its own token:
 ```bash
 npm run gtm:compile    # ask GTM to compile template.tpl
 npm run gtm:dry-run    # report whether a publish would happen
-npm run gtm:publish    # what CI runs on master
+npm run gtm:publish    # what CI runs on master (i.e. after a promotion)
 ```
 
 You need `gcloud` authenticated (`gcloud auth list`), `gh` authenticated, and
@@ -204,11 +204,14 @@ hard-capped: raising the per-user limit in Cloud Console does nothing. Both GTM
 workflows share a `gtm-api` concurrency group for that reason, and the script spaces
 its calls 4 seconds apart.
 
-Sharing that group is also why the compile check runs on pull requests only. When it
-also ran on `master`, the two workflows queued against each other on every merge and
-one was cancelled before starting. Nothing is lost: on `master` the e2e workflow
-publishes, and `create_version` fails loud on `compilerError` — a stronger check than
-`quick_preview`, because it actually produces a version.
+Sharing that group is also why the compile check runs on pull requests into `develop`
+only. When it also ran on `master`, the two workflows queued against each other on
+every merge and one was cancelled before starting. Nothing is lost: on `master` the
+e2e workflow publishes, and `create_version` fails loud on `compilerError` — a stronger
+check than `quick_preview`, because it actually produces a version. The base filter
+keeps the `develop → master` promotion PR out for the same reason: its `template.tpl`
+was already compiled on the PRs that built `develop`, and re-compiling it would queue
+against the publish the promotion merge is about to trigger.
 
 **Standard Tag Manager allows three workspaces per container.** The script reaps
 orphaned `ci-sync-*` workspaces before claiming one, so a killed run cannot silently

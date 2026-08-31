@@ -13,6 +13,10 @@ name: GTM live container e2e
 # container, and it depends on two third-party services being up; none of those
 # belong on the merge path. Runs after master moves, on demand, and weekly so a
 # silent break in the SDK or the container surfaces within days.
+#
+# master, not develop: a push to master is now the promotion that publishes to the
+# gallery, so this is the live smoke test of exactly what GTM users are about to
+# get. It also keeps a single writer for the shared CI container.
 on:
   push:
     branches:

@@ -1,9 +1,14 @@
 name: Release
 
 # Drives Semantic Versioning from Conventional Commits. On every push to
-# master, release-please maintains a "release PR". Merging that PR bumps
+# develop, release-please maintains a "release PR". Merging that PR bumps
 # VERSION, updates CHANGELOG.md, tags the commit and publishes a GitHub Release.
 # A follow-up step then appends the new version to the GTM metadata.yaml history.
+#
+# Everything here happens on develop. Nothing it produces reaches the gallery on
+# its own: Google reads metadata.yaml from the DEFAULT branch, which is master,
+# so a release is published only once someone promotes develop to master. See
+# docs/release-automation.md.
 #
 # Why not the canonical axeptio/tech-scripts caller workflows (ENG-11756)?
 # This repository is PUBLIC and tech-scripts is INTERNAL. GitHub only lets a
@@ -14,7 +19,7 @@ name: Release
 on:
   push:
     branches:
-      - master
+      - develop
 
 permissions:
   contents: write
@@ -29,15 +34,18 @@ jobs:
       # the original release-please run (#37) — a real bot account is allowed to,
       # and may bypass the PR requirement when pushing the metadata sync commit.
       #
-      # target-branch is intentionally omitted: it defaults to the repository's
-      # default branch, which is master — the same branch this workflow triggers
-      # on. (It had to be set explicitly while develop was the default branch,
-      # otherwise release-please opened its release PR against develop.)
+      # target-branch is pinned rather than left to default. It defaults to the
+      # repository's DEFAULT branch — master, which the gallery contract requires
+      # it to stay — so the fallback would open the release PR against the branch
+      # this flow releases *to*, not the one it releases *from*. Leaving it to the
+      # default is what silently mis-targeted the release PR the last time this
+      # repository had two long-lived branches.
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          target-branch: develop
           token: ${{ secrets.BOT_GITHUB_TOKEN }}
 
       # Is there an open release PR carrying an unsigned commit?
@@ -57,14 +65,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          BASE: master
+          BASE: develop
         run: |
           set -euo pipefail
           # Matched on all three of author, base and branch prefix — the same
           # belt-and-braces pattern commitlint.yml uses for its exemption. The
           # signing step force-pushes whatever this selects, so a branch merely
           # NAMED release-please--… must not be enough to have someone's work
-          # replaced by master plus three generated files.
+          # replaced by develop plus three generated files.
           number="$(gh pr list -R "$REPO" --state open --base "$BASE" \
             --json number,headRefName,author \
             --jq 'map(select(.author.login == "axeptio-bot")
@@ -77,7 +85,7 @@ jobs:
           fi
 
           # Skip when every commit is already verified, so a signed branch is
-          # not force-pushed (and its checks re-run) on every push to master.
+          # not force-pushed (and its checks re-run) on every push to develop.
           signed="$(gh api "repos/$REPO/pulls/$number/commits" \
             --jq '[.[].commit.verification.verified] | all')"
           if [ "$signed" = "true" ]; then
@@ -98,14 +106,14 @@ jobs:
         if: ${{ steps.release.outputs.release_created == 'true' || steps.relpr.outputs.branch != '' }}
         with:
           # Use the bot token so the follow-up push authenticates as the bot
-          # (and can bypass branch protection on master).
+          # (and can bypass branch protection on develop).
           token: ${{ secrets.BOT_GITHUB_TOKEN }}
           # Full history: the release-PR signing step below replays the
-          # generated files onto master and needs both branches.
+          # generated files onto develop and needs both branches.
           fetch-depth: 0
 
-      # Import the bot's GPG key so the metadata commit is signed — master
-      # enforces signed commits. Also sets git user.name/email from the key
+      # Import the bot's GPG key so the metadata commit is signed — develop
+      # enforces signed commits (the Compliance ruleset covers both branches). Also sets git user.name/email from the key
       # identity and enables commit signing globally.
       - name: Import bot GPG key
         if: ${{ steps.release.outputs.release_created == 'true' || steps.relpr.outputs.branch != '' }}
@@ -127,7 +135,7 @@ jobs:
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
         run: node scripts/update-metadata-version.mjs
 
-      # Opens a pull request rather than pushing straight to master. A direct
+      # Opens a pull request rather than pushing straight to develop. A direct
       # push cannot work: `Validate gallery contract` is a required status
       # check, and bypass_pull_request_allowances only exempts the bot from the
       # REVIEW requirement, not from status checks — a direct push carries no
@@ -157,8 +165,8 @@ jobs:
           # non-idempotent version would fail on the second attempt with a
           # non-fast-forward push or "a pull request already exists".
           #
-          # (The already-published case needs no handling here: on a re-run the
-          # checkout is fresh from master, so update-metadata-version.mjs finds
+          # (The already-synced case needs no handling here: on a re-run the
+          # checkout is fresh from develop, so update-metadata-version.mjs finds
           # the sha present, writes nothing, and the guard above exits 0.)
           branch="chore/sync-metadata-${RELEASE_TAG}"
           git checkout -B "$branch"
@@ -172,9 +180,9 @@ jobs:
           if gh pr view "$branch" --json number >/dev/null 2>&1; then
             echo "Sync PR for ${RELEASE_TAG} already exists; updated its branch."
           else
-            gh pr create --base master --head "$branch" \
+            gh pr create --base develop --head "$branch" \
               --title "chore(metadata): sync version history for ${RELEASE_TAG}" \
-              --body "Publishes ${RELEASE_TAG} to the GTM Community Template Gallery by appending the released commit to \`metadata.yaml\`. Generated by \`scripts/update-metadata-version.mjs\`; do not edit by hand."
+              --body "Stages ${RELEASE_TAG} for the GTM Community Template Gallery by appending the released commit to \`metadata.yaml\`. It reaches the gallery when develop is promoted to master. Generated by \`scripts/update-metadata-version.mjs\`; do not edit by hand."
           fi
 
           # Auto-merge rather than merging outright, so the contract check has
@@ -186,8 +194,8 @@ jobs:
             echo "Could not enable auto-merge; the sync PR is open and needs a manual merge."
 
       # release-please authenticates with a PAT, and the release commit it
-      # creates through the API is NOT signed. master requires verified
-      # signatures via the Compliance ruleset, which has NO bypass actor, so an
+      # creates through the API is NOT signed. The Compliance ruleset requires
+      # verified signatures on master AND develop and has NO bypass actor, so an
       # unsigned commit makes the release PR unmergeable by anyone — including
       # an admin. That blocked v2.1.3.
       #
@@ -205,11 +213,11 @@ jobs:
       # the bot's GPG key — the same key and the same checkout-B-and-force-push
       # pattern the sync PR above already uses. The branch only ever carries
       # three generated files and release-please rewrites it from scratch on
-      # every run, so replacing it wholesale is safe. Replaying onto master also
-      # drops the "Merge branch 'master' into release-please--…" commits the
+      # every run, so replacing it wholesale is safe. Replaying onto develop also
+      # drops the "Merge branch 'develop' into release-please--…" commits the
       # action leaves behind.
       #
-      # Runs last so the metadata steps above still see a checkout of master,
+      # Runs last so the metadata steps above still see a checkout of develop,
       # and is gated on the detector at the top of the job rather than on
       # release-please's own output — see the comment there.
       - name: Sign the release PR commit
@@ -220,24 +228,24 @@ jobs:
           set -euo pipefail
           branch="$RELEASE_BRANCH"
 
-          git fetch --quiet origin master "$branch"
+          git fetch --quiet origin develop "$branch"
           before="$(git rev-parse "origin/$branch")"
 
           # Reuse release-please's own subject rather than the PR title: the
           # title is free text, while this is the commit the action wrote. The
           # oldest non-merge commit on the branch is the release commit.
-          title="$(git log --format=%s --no-merges "origin/master..origin/$branch" | tail -1)"
+          title="$(git log --format=%s --no-merges "origin/develop..origin/$branch" | tail -1)"
           if [ -z "$title" ]; then
             echo "No release commit found on $branch; nothing to sign." >&2
             exit 1
           fi
 
-          git checkout -B "$branch" origin/master
+          git checkout -B "$branch" origin/develop
           git checkout "origin/$branch" -- \
             VERSION CHANGELOG.md .release-please-manifest.json
 
           if git diff --cached --quiet; then
-            echo "Release PR branch matches master; nothing to sign."
+            echo "Release PR branch matches develop; nothing to sign."
             exit 0
           fi
 
