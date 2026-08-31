@@ -165,7 +165,8 @@ run unchanged in the GTM UI **Tests** tab. `js-yaml` is the only dependency.
 Apache-2.0-only, `categories` in `___INFO___`, every `versions[].sha` real and newest-first, the
 `# Latest version` marker, and the required files at the repo root. Breaking any of these silently
 delists the template 2-3 days later with no feedback from Google, which is exactly how SUP-1008
-happened. CI runs it on every PR **and** on pushes to `master`; run it locally before touching
+happened. CI runs it on every PR **and** on pushes to `develop` and `master`; run it locally
+before touching
 `LICENSE`, `metadata.yaml` or `template.tpl`.
 
 Add coverage by adding a scenario to the `___TESTS___` block, not by writing a separate test file
@@ -176,10 +177,15 @@ whose test name contains punctuation, so the runner guards against it.
 ## Conventions & Patterns
 
 - **Conventional Commits are mandatory.** PRs land as **merge commits** (squash and rebase are
-  disabled), so *every* commit in the branch reaches `master` and is what release-please parses —
+  disabled), so *every* commit in the branch reaches `develop` and is what release-please parses —
   tidy the history before merging. CI (`Lint commits`) checks every commit and the PR title.
   Types/scopes live in `commitlint.config.mjs`.
-- **Single branch: `master`.** It is both the default and the release branch. No `develop`.
+- **Two branches: `develop` integrates, `master` publishes.** Feature PRs target `develop`;
+  release-please runs there (`target-branch: develop` is pinned) and cuts the tag. A manual
+  `develop → master` promotion PR — opened by the `Promote develop to master` workflow — is what
+  reaches the GTM gallery, because Google reads `metadata.yaml` from the **default** branch, which
+  is and must stay `master`. **Never merge `master` back into `develop`**: `Lint commits` would
+  then fail every future promotion PR. Only `develop` and `hotfix/*` may target `master`.
 - **Never hand-edit `VERSION`, `CHANGELOG.md`, `.release-please-manifest.json`, or the
   `versions:` list in `metadata.yaml`** — all four are generated. See
   [docs/release-automation.md](docs/release-automation.md).
