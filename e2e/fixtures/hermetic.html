@@ -29,6 +29,10 @@
     // bundling step, so what runs here is byte-for-byte what ships.
     const compiled = new Function('require', 'data', sandboxSource);
 
+    // The runtime from the most recent runTemplate, kept so the post-run readers
+    // below can reach it.
+    let latestRuntime = null;
+
     window.runTemplate = (data) => {
       delete window.axeptioSettings;
       delete window.__axeptioStub;
@@ -40,7 +44,7 @@
       // than the previous run's answer.
       window.dataLayer = [];
 
-      const runtime = createRuntime(permissions);
+      const runtime = latestRuntime = createRuntime(permissions);
       // GTM hands these to injectScript as the script's onload/onerror, so they
       // fire after runTemplate has already returned. They live on window and are
       // read via window.gtmCallbacks() once the SDK has actually booted; a
@@ -77,6 +81,16 @@
     // than on runTemplate's return value.
     window.sdkBoot = () => window.__axeptioStub || null;
     window.gtmCallbacks = () => window.__gtmCallbacks;
+
+    // GTM's consent model as it stands now, and every API call with its arguments.
+    // Both are read after runTemplate has returned, for the same reason as the two
+    // above: the SDK stub boots on script load and the template's consent audit
+    // runs on a callLater after that, so a value captured at return time predates
+    // everything worth asserting on. runTemplate's own `calls` is api names only.
+    window.consentState = () => (latestRuntime ? latestRuntime.consentState() : null);
+    window.runtimeCalls = () => (latestRuntime
+      ? latestRuntime.calls.map((c) => ({ api: c.api, args: JSON.parse(JSON.stringify(c.args)) }))
+      : []);
 
     window.__harnessReady = true;
   </script>

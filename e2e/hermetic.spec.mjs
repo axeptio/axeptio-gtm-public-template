@@ -46,6 +46,22 @@ const geoLookup = (page) => page.waitForFunction(() => window.__geoStub || null)
 const planGeoAnswer = (page, answer) =>
   page.evaluate((value) => { window.__geoAnswer = value; }, answer);
 
+// Tells the stub SDK to push a Google Consent Mode default of its own as it boots,
+// the way the real Brands bundle does. Planted before the template runs and
+// consumed by the stub, exactly like planGeoAnswer above.
+const planSdkConsentDefault = (page, state) =>
+  page.evaluate((value) => { window.__axeptioStubConsentDefault = value; }, state);
+
+// The template's consent audit runs on a callLater scheduled from the SDK's load
+// callback, so it lands after runTemplate has returned and after the stub booted.
+// Poll for the line rather than racing it.
+const auditLine = (page) => page.waitForFunction(() => {
+  const logged = window.runtimeCalls()
+    .filter((c) => c.api === 'logToConsole')
+    .map((c) => String(c.args[0]));
+  return logged.find((line) => line.indexOf('Google consent state') !== -1) || null;
+}).then((handle) => handle.jsonValue());
+
 test.beforeEach(async ({ page }) => {
   await openHarness(page);
 });
@@ -170,6 +186,85 @@ test('the extra storage types are writable and the wait is configurable', async 
   expect(consent.state.personalization_storage).toBe('denied');
   expect(consent.state.security_storage).toBe('granted');
   expect(consent.state.wait_for_update).toBe(2000);
+});
+
+// The reported failure, reproduced (gtm-0y2). The publisher's tag configured
+// analytics_storage and ad_storage as granted; the Brands SDK pushed a global
+// all-denied default of its own as it booted and overrode both, and nothing said
+// so. These two tests hold the two halves: that the override really lands, and
+// that the template now notices.
+//
+// What this layer CANNOT prove is that the real SDK does this — the stub only does
+// what it is told to. That evidence is in the live suite and in gtm-0y2 itself.
+// What it does prove is that our audit catches it when it happens, which is the
+// part that lives in this repository.
+test('an SDK consent default pushed after the tag overrides what the tag set', async ({ page }) => {
+  await planSdkConsentDefault(page, {
+    analytics_storage: 'denied',
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied',
+    wait_for_update: 500,
+  });
+
+  const result = await run(page, {
+    id: PROJECT_ID,
+    isComoEnabled: true,
+    defaultSettings: [{
+      region: '',
+      analytics_storage: 'granted',
+      ad_storage: 'granted',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+    }],
+  });
+  expect(result.error).toBeNull();
+
+  // The tag really did set them granted — the override is what changes them, not a
+  // misconfigured run.
+  const consent = result.dataLayer.find((entry) => entry.event === 'consent.default');
+  expect(consent.state.analytics_storage).toBe('granted');
+  expect(consent.state.ad_storage).toBe('granted');
+
+  await sdkBoot(page);
+
+  // gtag consent commands in the data layer feed the same model the template's own
+  // API writes to, which is how the override reaches GTM in production.
+  await expect
+    .poll(async () => (await page.evaluate(() => window.consentState())).analytics_storage)
+    .toBe('denied');
+  const state = await page.evaluate(() => window.consentState());
+  expect(state.ad_storage).toBe('denied');
+});
+
+test('the consent audit reports the types the SDK overrode', async ({ page }) => {
+  await planSdkConsentDefault(page, { analytics_storage: 'denied', ad_storage: 'denied' });
+
+  const result = await run(page, {
+    id: PROJECT_ID,
+    isComoEnabled: true,
+    defaultSettings: [{ region: '', analytics_storage: 'granted', ad_storage: 'granted' }],
+  });
+  expect(result.error).toBeNull();
+
+  const line = await auditLine(page);
+  expect(line).toContain('no longer matches this tag configuration');
+  expect(line).toContain('analytics_storage is denied but this tag set granted');
+  expect(line).toContain('ad_storage is denied but this tag set granted');
+});
+
+test('the consent audit stays quiet when nothing overrode the tag', async ({ page }) => {
+  // No planSdkConsentDefault: the stub boots without pushing anything, which is
+  // what a well-behaved SDK does and what the fix in widget-client will restore.
+  const result = await run(page, {
+    id: PROJECT_ID,
+    isComoEnabled: true,
+    defaultSettings: [{ region: '', analytics_storage: 'granted', ad_storage: 'denied' }],
+  });
+  expect(result.error).toBeNull();
+
+  const line = await auditLine(page);
+  expect(line).toContain('still matches this tag configuration');
 });
 
 test('an existing consent cookie is replayed as a consent update', async ({ page, context }) => {
