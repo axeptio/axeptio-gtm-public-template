@@ -24,6 +24,6 @@ export default {
     ],
     // Scopes are encouraged but optional. Keep this as a warning (level 1) so
     // contributors aren't blocked, while still nudging toward known areas.
-    'scope-enum': [1, 'always', ['template', 'metadata', 'docs', 'ci']],
+    'scope-enum': [1, 'always', ['template', 'metadata', 'docs', 'ci', 'release']],
   },
 };

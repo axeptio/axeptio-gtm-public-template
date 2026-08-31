@@ -6,15 +6,23 @@ name: Validate gallery contract
 # found by a customer roughly a day after the LICENSE was replaced. This is the
 # only place a violation can be caught before it ships.
 #
-# Runs on pushes to master as well as pull requests: the LICENSE regression
-# reached master through a merge, which a PR-only gate would not have stopped.
+# Runs on pushes as well as pull requests: the LICENSE regression reached master
+# through a merge, which a PR-only gate would not have stopped.
+#
+# Both branches, deliberately. `Validate gallery contract` is a required status
+# check on master AND develop (the Compliance ruleset covers both), so leaving
+# develop out would deadlock every PR against it: the ruleset waits forever for a
+# check run that is never produced. It is also the check that has to pass on the
+# metadata.yaml sync PR, which now targets develop.
 on:
   pull_request:
     branches:
       - master
+      - develop
   push:
     branches:
       - master
+      - develop
 
 permissions:
   contents: read
