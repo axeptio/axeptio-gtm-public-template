@@ -27,4 +27,28 @@
     requestedUrl: params.get('real'),
     bootedAt: window.performance.now(),
   };
+
+  // The real Brands SDK pushes a Google Consent Mode default of its own as it
+  // boots, on top of whatever the GTM template already set. It decides one is
+  // needed by scanning the data layer for a gtag-style ['consent','default'] entry
+  // — and GTM's setDefaultConsentState never writes one, so the scan always comes
+  // up empty and the push always happens. On one reported site that overwrote two
+  // types the publisher had configured as granted (see gtm-0y2).
+  //
+  // Off unless a test asks for it, so every existing scenario is unaffected.
+  // Consumed rather than merely read, the same as __geoAnswer in stub-geo.js: it
+  // is planted before runTemplate and the harness reset deliberately leaves inputs
+  // alone, so clearing it here is what stops a second run inheriting the first
+  // one's instruction.
+  var ownDefault = window.__axeptioStubConsentDefault;
+  delete window.__axeptioStubConsentDefault;
+  if (ownDefault) {
+    // Pushed as `arguments`, not as an array or an event — that is what
+    // `function gtag(){ dataLayer.push(arguments) }` produces, and the shape the
+    // runtime's consent model and the live suite's gtagConsentCalls both key on.
+    window.dataLayer = window.dataLayer || [];
+    (function () {
+      window.dataLayer.push(arguments);
+    })('consent', 'default', ownDefault);
+  }
 })();
