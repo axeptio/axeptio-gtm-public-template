@@ -613,6 +613,9 @@ const isConsentGranted = require('isConsentGranted');
 const callLater = require('callLater');
 
 let consentUpdateAlreadySent = false;
+// Whether this tag sent a Consent Mode default that applies to EVERY visitor.
+// Not merely "did setDefaultConsentState run" - see where it is set.
+let consentDefaultAlreadySent = false;
 
 // The Additional Axeptio Settings rows are needed twice: once down at the bottom,
 // where every row is coerced onto axeptioSettings, and once here, because one of
@@ -1327,6 +1330,7 @@ const applyConsentDefaults = () => {
     };
     setDefaultConsentState(fallbackDefaults);
     rememberClaim(fallbackDefaults);
+    consentDefaultAlreadySent = true;
   }
   // A row whose Region is blank applies everywhere; one with regions applies only
   // there. A table made entirely of region rows therefore sends no default at all
@@ -1353,6 +1357,15 @@ const applyConsentDefaults = () => {
       // know which - auditing one would report drift at every visitor outside it,
       // and a diagnostic that cries wolf is worse than none.
       rememberClaim(defaultData);
+      // Only a row that actually names a consent type counts. A region-less row
+      // whose every column is left on Not set reaches setDefaultConsentState with
+      // nothing but wait_for_update, so GTM ends up with no default for any type
+      // and telling the SDK to stay quiet would leave the page with none at all.
+      for (const sentKey in defaultData) {
+        if (allowedConsentTypes.indexOf(sentKey) !== -1) {
+          consentDefaultAlreadySent = true;
+        }
+      }
     } else {
       noteRegionRow(defaultData);
     }
@@ -1640,6 +1653,9 @@ const axeptioSettings = {
 if (consentUpdateAlreadySent) {
   axeptioSettings.consentUpdateAlreadySent = true;
 }
+if (consentDefaultAlreadySent) {
+  axeptioSettings.consentDefaultAlreadySent = true;
+}
 
 // Sent only when it differs from the SDK's own default, so a tag that never
 // touched the field or the row - and every tag saved before the field existed -
@@ -1876,6 +1892,9 @@ if (!autoResolveConfig) {
     merged.cookiesVersion = resolvedCookiesVersion;
     if (consentUpdateAlreadySent) {
       merged.consentUpdateAlreadySent = true;
+    }
+    if (consentDefaultAlreadySent) {
+      merged.consentDefaultAlreadySent = true;
     }
     setInWindow('axeptioSettings', merged, true);
 
@@ -2592,6 +2611,68 @@ scenarios:
     runCode({isComoEnabled: true, defaultSettings: []});
 
     assertThat(settings.consentUpdateAlreadySent).isEqualTo(true);
+- name: A global default flags consentDefaultAlreadySent for the SDK
+  code: |-
+    // widget-client honours this by skipping its own gtag consent default
+    // entirely, so the template may only set it when it has sent a default that
+    // covers every visitor. Strict boolean true - the SDK ignores the string.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: '', analytics_storage: 'granted'}]
+    });
+
+    assertThat(settings.consentDefaultAlreadySent).isEqualTo(true);
+- name: An empty default table flags consentDefaultAlreadySent
+  code: |-
+    // The fallback sends five types to every visitor, so the SDK can stay quiet.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', isComoEnabled: true, defaultSettings: []});
+
+    assertThat(settings.consentDefaultAlreadySent).isEqualTo(true);
+- name: A region only table leaves consentDefaultAlreadySent unset
+  code: |-
+    // The visitor may be outside every listed region, in which case GTM holds no
+    // default for them at all. Telling the SDK to skip would leave the page with
+    // none, and Google reads an absent default as granted - the opposite of what
+    // the publisher configured row by row.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: 'FR', analytics_storage: 'granted'}]
+    });
+
+    assertThat(settings.consentDefaultAlreadySent).isUndefined();
+- name: A region less row with no type set leaves consentDefaultAlreadySent unset
+  code: |-
+    // Every column on Not set reaches setDefaultConsentState with nothing but
+    // wait_for_update, so GTM ends up with no default for any type.
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({
+      id: '6a22da4da7d365c1e246783d',
+      isComoEnabled: true,
+      defaultSettings: [{region: '', functionality_storage: 'unset'}]
+    });
+
+    assertThat(settings.consentDefaultAlreadySent).isUndefined();
+- name: Consent Mode off leaves consentDefaultAlreadySent unset
+  code: |-
+    let settings;
+    mock('setInWindow', (key, value) => { settings = value; });
+
+    runCode({id: '6a22da4da7d365c1e246783d', isComoEnabled: false});
+
+    assertThat(settings.consentDefaultAlreadySent).isUndefined();
 - name: No early consent leaves consentUpdateAlreadySent unset
   code: |-
     let settings;

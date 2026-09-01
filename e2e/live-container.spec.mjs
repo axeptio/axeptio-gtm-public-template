@@ -139,6 +139,13 @@ async function waitForSettings(page) {
 // two boot tests have not yet written.
 const EXPECTED_SETTINGS_KEYS = [
   'clientId',
+  // Present because all three CI tags have Consent Mode on with a single, global
+  // default row (docs/ci-testing.md), which is exactly the condition the template
+  // sets this flag under. It tells the SDK not to send a Consent Mode default of
+  // its own. A tag with Consent Mode off, or with a region-only table, would not
+  // carry it — so this entry is a statement about the CI tags, not about the
+  // template, and it is the reason the Consent-Mode-off path has no live coverage.
+  'consentDefaultAlreadySent',
   'cookiesVersion',
   'dataLayerName',
   'platform',
@@ -613,22 +620,38 @@ test('Brands: accepting writes a cookie the template replays as an early consent
   const second = await waitForSettings(page);
   expect(second.consentUpdateAlreadySent).toBe(true);
 
-  // And what the SDK does with that head start: nothing. `consentUpdateAlreadySent`
-  // exists so the SDK can skip an update the template has already applied, but the
-  // string does not occur anywhere in either shipped bundle — /sdk.js or
-  // /tcf/sdk.js — so nothing reads it and the update goes out again on boot.
+  // And what the SDK does with that head start — which is mid-migration, so this
+  // assertion deliberately accepts both answers.
+  //
+  // `consentUpdateAlreadySent` exists so the SDK can skip an update the template
+  // has already applied. widget-client#772 (ENG-13516, merged 2026-09-01) makes it
+  // do so: loadGoogleConsentModeChoices skips the page-load update only. That is
+  // merged but NOT yet on the CDN, so whether the count is 1 or 0 depends on which
+  // bundle static.axept.io is serving on the day this runs — and this suite runs on
+  // master pushes and a weekly cron, where a red build is detached from any change
+  // of ours.
   //
   // The template's early update is invisible in the dataLayer — updateConsentState
-  // writes to GTM's consent model — so the entry counted here is the SDK's alone,
+  // writes to GTM's consent model — so an entry counted here is the SDK's alone,
   // and it is redundant with the replay the assertion just above proved happened:
   //
   //   ["consent","update",{"analytics_storage":"granted","ad_storage":"granted",
   //    "ad_user_data":"granted","ad_personalization":"granted"}]
   //
-  // Asserted as 1 because that is what happens, not as 0 because that is what we
-  // would prefer. When the SDK starts honouring the flag this fails, and the number
-  // becomes 0 in the same commit that records why.
+  // 0 is the correct outcome and 1 is the pre-#772 one. Both pass; anything else
+  // fails. This is NOT a lenient assertion in disguise — 2 would mean the skip
+  // broke and the SDK now double-sends, which is the regression worth catching.
+  //
+  // TIGHTEN THIS to .toBe(0) once the CDN serves the new bundle. Check with:
+  //   curl -s https://static.axept.io/sdk.js | grep -c consentUpdateAlreadySent
   await waitForDataLayerToSettle(page);
   const updates = await gtagConsentCalls(page, 'update');
-  expect(updates.length, `gtag consent updates in dataLayer: ${JSON.stringify(updates)}`).toBe(1);
+  const honoursFlag = await page.evaluate(async () =>
+    (await fetch('https://static.axept.io/sdk.js').then((r) => r.text()))
+      .includes('consentUpdateAlreadySent'));
+  expect(
+    updates.length,
+    `gtag consent updates in dataLayer: ${JSON.stringify(updates)} ` +
+      `(deployed bundle ${honoursFlag ? 'DOES' : 'does not'} reference consentUpdateAlreadySent)`,
+  ).toBe(honoursFlag ? 0 : 1);
 });
