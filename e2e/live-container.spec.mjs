@@ -572,7 +572,7 @@ async function readAxeptioCookie(page) {
   });
 }
 
-test('Brands: accepting writes a cookie the template replays as an early consent update', async ({ page }) => {
+test('Brands: accepting writes a cookie the template replays as an early consent update', async ({ page, request }) => {
   // The round trip no cheaper layer can prove. The unit scenarios feed the parser a
   // hand-written cookie and the hermetic suite stubs the bundle, so both assert that
   // the template handles a cookie *we* wrote. Only here does the real SDK write it.
@@ -644,11 +644,18 @@ test('Brands: accepting writes a cookie the template replays as an early consent
   //
   // TIGHTEN THIS to .toBe(0) once the CDN serves the new bundle. Check with:
   //   curl -s https://static.axept.io/sdk.js | grep -c consentUpdateAlreadySent
+  //
+  // Read through Playwright's request context, NOT page.evaluate(fetch(...)). A
+  // cross-origin <script> needs no CORS, which is how the SDK loads at all, but
+  // fetch() does - and static.axept.io sends no access-control-allow-origin header
+  // (checked 2026-09-01), so an in-page fetch throws and takes the whole test with
+  // it rather than answering the question. This runs in the test process instead.
   await waitForDataLayerToSettle(page);
   const updates = await gtagConsentCalls(page, 'update');
-  const honoursFlag = await page.evaluate(async () =>
-    (await fetch('https://static.axept.io/sdk.js').then((r) => r.text()))
-      .includes('consentUpdateAlreadySent'));
+  const bundleUrl = 'https://static.axept.io' + BUNDLE_PATHS[0];
+  const bundle = await request.get(bundleUrl);
+  expect(bundle.ok(), `could not read ${bundleUrl} to tell which SDK is deployed`).toBe(true);
+  const honoursFlag = (await bundle.text()).includes('consentUpdateAlreadySent');
   expect(
     updates.length,
     `gtag consent updates in dataLayer: ${JSON.stringify(updates)} ` +

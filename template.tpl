@@ -2651,7 +2651,7 @@ scenarios:
     });
 
     assertThat(settings.consentDefaultAlreadySent).isUndefined();
-- name: A region less row with no type set leaves consentDefaultAlreadySent unset
+- name: A region-less row with no type set leaves consentDefaultAlreadySent unset
   code: |-
     // Every column on Not set reaches setDefaultConsentState with nothing but
     // wait_for_update, so GTM ends up with no default for any type.
@@ -3237,7 +3237,7 @@ scenarios:
       ad_personalization: 'denied',
       wait_for_update: 500
     });
-- name: One region less row produces exactly one default call
+- name: One region-less row produces exactly one default call
   code: |-
     // The count, not just the payload. Nothing asserted how many defaults a single
     // run sends, so a second call sneaking in - the failure mode the whole gtm-0y2
