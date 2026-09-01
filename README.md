@@ -43,7 +43,8 @@ it is published — so a fix you have been told is "in" is not installable there
 carries the template as a downloadable file for exactly that window:
 
 1. Open [Releases](https://github.com/axeptio/axeptio-gtm-public-template/releases) and download
-   `axeptio-cmp-<version>.tpl` from the version you want.
+   `axeptio-cmp-v<version>.tpl` from the version you want — for v2.8.0 that is
+   `axeptio-cmp-v2.8.0.tpl`.
 2. In GTM: **Templates → Tag Templates → New**, then the **⋮** menu at the top right → **Import**,
    and choose the file.
 3. Create a tag from it as above.

@@ -25,7 +25,7 @@ information on using pull requests.
 
 Everything below is for people working in this repository. If you only need to **try** an unreleased
 version — QA, support, or a customer verifying a fix — you do not need any of it: download
-`axeptio-cmp-<version>.tpl` from the
+`axeptio-cmp-v<version>.tpl` from the
 [Releases page](https://github.com/axeptio/axeptio-gtm-public-template/releases) and import it into a
 test container. See *Testing a version before it reaches the gallery* in the README, including why it
 must not be a production container.
