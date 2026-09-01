@@ -23,6 +23,13 @@ information on using pull requests.
 
 ## Testing a template change
 
+Everything below is for people working in this repository. If you only need to **try** an unreleased
+version — QA, support, or a customer verifying a fix — you do not need any of it: download
+`axeptio-cmp-<version>.tpl` from the
+[Releases page](https://github.com/axeptio/axeptio-gtm-public-template/releases) and import it into a
+test container. See *Testing a version before it reaches the gallery* in the README, including why it
+must not be a production container.
+
 The `___TESTS___` block in `template.tpl` holds YAML test scenarios. They run in two places from
 that one definition — in the GTM UI **Tests** tab, and headlessly in CI:
 

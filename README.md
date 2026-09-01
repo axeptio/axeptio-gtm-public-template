@@ -36,6 +36,28 @@ Step-by-step setup, screenshots and Consent Mode guidance live in the Help Cente
 
 👉 **[Axeptio Help Center — Google Consent Mode v2](https://support.axeptio.eu/articles/274002)**
 
+### Testing a version before it reaches the gallery
+
+The gallery serves the released template, and Google picks a new version up two to three days after
+it is published — so a fix you have been told is "in" is not installable there yet. Every release
+carries the template as a downloadable file for exactly that window:
+
+1. Open [Releases](https://github.com/axeptio/axeptio-gtm-public-template/releases) and download
+   `axeptio-cmp-<version>.tpl` from the version you want.
+2. In GTM: **Templates → Tag Templates → New**, then the **⋮** menu at the top right → **Import**,
+   and choose the file.
+3. Create a tag from it as above.
+
+> [!WARNING]
+> A template imported this way is a **separate object** from the gallery one. It receives no gallery
+> updates, and a container can end up holding both — two Axeptio templates, and a tag pointing at
+> whichever one you picked. Import a pre-release build into a **test container, never a production
+> one**, and delete it once the version reaches the gallery.
+
+For the very latest unreleased state rather than a release, `template.tpl` on the `develop` branch is
+the same file. It moves whenever `develop` moves, so note the commit if you report anything against
+it.
+
 ## Configuration
 
 | Field | Default | What it does |
