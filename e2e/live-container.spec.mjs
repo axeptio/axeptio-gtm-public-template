@@ -129,14 +129,16 @@ async function waitForSettings(page) {
 // because the interesting failure is a key nobody predicted: an Additional Axeptio
 // Settings row added to a CI tag writes whatever key it names straight onto this
 // object, and a list of forbidden names would never mention it. This says the tags
-// carry these nine and nothing else.
+// carry these ten and nothing else.
 //
-// The nine come from two places in template.tpl, and the difference matters. All of
-// them are written by the settings literal at the foot of the file, so their keys
-// exist whatever the tag holds. metadataPrefix and proxyBaseUrl are assigned after
-// it, each behind a test, so their absence here is what says neither tag set them —
-// as is the absence of consentUpdateAlreadySent, which needs a consent cookie the
-// two boot tests have not yet written.
+// They come from two places in template.tpl, and the difference matters. Nine are
+// written by the settings literal at the foot of the file, so their keys exist
+// whatever the tag holds. The tenth, consentDefaultAlreadySent, is assigned after
+// it behind a test, as are metadataPrefix and proxyBaseUrl — so for those three,
+// presence or absence here is a statement about what the CI tags are configured to
+// do, not about which keys the template can emit. Absent for the same reason:
+// consentUpdateAlreadySent, which needs a consent cookie the two boot tests have
+// not yet written.
 const EXPECTED_SETTINGS_KEYS = [
   'clientId',
   // Present because all three CI tags have Consent Mode on with a single, global
@@ -156,7 +158,7 @@ const EXPECTED_SETTINGS_KEYS = [
   'userCookiesSecure',
 ];
 
-// Of those nine, the three neither tag fills in. Their keys exist and hold nothing,
+// Of those ten, the three neither tag fills in. Their keys exist and hold nothing,
 // and the distinction is not academic: the SDK filters undefined out of its merge
 // (widget-client src/sdk/SDKSettings.ts), so a key carrying undefined leaves the
 // SDK's own default alone while a key carrying a VALUE overrides it. Filling one of
