@@ -25,7 +25,6 @@ versions:
   - sha: b389e42c6989b334592a4fae8c4032c22cf5eeaa
     changeNotes: |-
       - tell the SDK the tag already sent a Consent Mode default
-      - read the deployed bundle through Playwright rather than the page
       - reserve the Consent Mode handshake flags from Additional Settings
   # Older versions
   - sha: 45803c2b4fdf509cbfd0232d2eb5525785a7f5c4
