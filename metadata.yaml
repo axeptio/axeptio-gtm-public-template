@@ -22,10 +22,14 @@ documentation: "https://support.axeptio.eu/en/"
 # after each release — do not add them by hand.
 versions:
   # Latest version
+  - sha: b389e42c6989b334592a4fae8c4032c22cf5eeaa
+    changeNotes: |-
+      - tell the SDK the tag already sent a Consent Mode default
+      - reserve the Consent Mode handshake flags from Additional Settings
+  # Older versions
   - sha: 45803c2b4fdf509cbfd0232d2eb5525785a7f5c4
     changeNotes: |-
       - warn in Preview when Google consent state stops matching
-  # Older versions
   - sha: 560a06e10ba765667495da7d30bbfa12ee3a4ac3
     changeNotes: |-
       - resolve flow and configuration through the Axeptio geolocation service

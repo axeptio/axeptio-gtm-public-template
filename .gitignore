@@ -17,3 +17,9 @@ blob-report/
 # Local planning notes from the superpowers skill. Scratch working files, not
 # project documentation — they have no place in a public gallery repository.
 docs/superpowers/
+
+# Release assets built by the "Attach the template to the release" step, and by
+# anyone who runs the same gh release upload by hand. The workflow removes its
+# copy; this keeps a local one out of the repository, where a second 230 KB copy
+# of template.tpl would be pure confusion.
+axeptio-cmp-*.tpl

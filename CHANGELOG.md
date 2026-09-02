@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.8.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.7.0...v2.8.0) (2026-09-01)
+
+
+### Features
+
+* **ci:** attach the template to every GitHub Release ([b77e6a8](https://github.com/axeptio/axeptio-gtm-public-template/commit/b77e6a8a45f441472a0deaf9fad4449779905b67))
+* **ci:** attach the template to every GitHub Release ([f13bb2f](https://github.com/axeptio/axeptio-gtm-public-template/commit/f13bb2feefe2b7affe434698d29b5686892f5c5e))
+* **template:** tell the SDK the tag already sent a Consent Mode default ([3002232](https://github.com/axeptio/axeptio-gtm-public-template/commit/300223239451a4a8b387c27f68c9c32bc3f1a8d7))
+* **template:** tell the SDK the tag already sent a Consent Mode default ([42ba9d6](https://github.com/axeptio/axeptio-gtm-public-template/commit/42ba9d6bb540a3afc172ed2b27d398457eb66de5))
+
+
+### Bug Fixes
+
+* read the deployed bundle through Playwright rather than the page ([2eb8e2c](https://github.com/axeptio/axeptio-gtm-public-template/commit/2eb8e2cee91331e24c1e4e3a8a76b116a19abbf6))
+* **template:** reserve the Consent Mode handshake flags from Additional Settings ([43d3e00](https://github.com/axeptio/axeptio-gtm-public-template/commit/43d3e00e94b7423d8ba829c3c477ab1f11b1c111))
+
 ## [2.7.0](https://github.com/axeptio/axeptio-gtm-public-template/compare/v2.6.0...v2.7.0) (2026-08-31)
 
 

@@ -129,16 +129,25 @@ async function waitForSettings(page) {
 // because the interesting failure is a key nobody predicted: an Additional Axeptio
 // Settings row added to a CI tag writes whatever key it names straight onto this
 // object, and a list of forbidden names would never mention it. This says the tags
-// carry these nine and nothing else.
+// carry these ten and nothing else.
 //
-// The nine come from two places in template.tpl, and the difference matters. All of
-// them are written by the settings literal at the foot of the file, so their keys
-// exist whatever the tag holds. metadataPrefix and proxyBaseUrl are assigned after
-// it, each behind a test, so their absence here is what says neither tag set them —
-// as is the absence of consentUpdateAlreadySent, which needs a consent cookie the
-// two boot tests have not yet written.
+// They come from two places in template.tpl, and the difference matters. Nine are
+// written by the settings literal at the foot of the file, so their keys exist
+// whatever the tag holds. The tenth, consentDefaultAlreadySent, is assigned after
+// it behind a test, as are metadataPrefix and proxyBaseUrl — so for those three,
+// presence or absence here is a statement about what the CI tags are configured to
+// do, not about which keys the template can emit. Absent for the same reason:
+// consentUpdateAlreadySent, which needs a consent cookie the two boot tests have
+// not yet written.
 const EXPECTED_SETTINGS_KEYS = [
   'clientId',
+  // Present because all three CI tags have Consent Mode on with a single, global
+  // default row (docs/ci-testing.md), which is exactly the condition the template
+  // sets this flag under. It tells the SDK not to send a Consent Mode default of
+  // its own. A tag with Consent Mode off, or with a region-only table, would not
+  // carry it — so this entry is a statement about the CI tags, not about the
+  // template, and it is the reason the Consent-Mode-off path has no live coverage.
+  'consentDefaultAlreadySent',
   'cookiesVersion',
   'dataLayerName',
   'platform',
@@ -149,7 +158,7 @@ const EXPECTED_SETTINGS_KEYS = [
   'userCookiesSecure',
 ];
 
-// Of those nine, the three neither tag fills in. Their keys exist and hold nothing,
+// Of those ten, the three neither tag fills in. Their keys exist and hold nothing,
 // and the distinction is not academic: the SDK filters undefined out of its merge
 // (widget-client src/sdk/SDKSettings.ts), so a key carrying undefined leaves the
 // SDK's own default alone while a key carrying a VALUE overrides it. Filling one of
@@ -565,7 +574,7 @@ async function readAxeptioCookie(page) {
   });
 }
 
-test('Brands: accepting writes a cookie the template replays as an early consent update', async ({ page }) => {
+test('Brands: accepting writes a cookie the template replays as an early consent update', async ({ page, request }) => {
   // The round trip no cheaper layer can prove. The unit scenarios feed the parser a
   // hand-written cookie and the hermetic suite stubs the bundle, so both assert that
   // the template handles a cookie *we* wrote. Only here does the real SDK write it.
@@ -613,22 +622,45 @@ test('Brands: accepting writes a cookie the template replays as an early consent
   const second = await waitForSettings(page);
   expect(second.consentUpdateAlreadySent).toBe(true);
 
-  // And what the SDK does with that head start: nothing. `consentUpdateAlreadySent`
-  // exists so the SDK can skip an update the template has already applied, but the
-  // string does not occur anywhere in either shipped bundle — /sdk.js or
-  // /tcf/sdk.js — so nothing reads it and the update goes out again on boot.
+  // And what the SDK does with that head start — which is mid-migration, so this
+  // assertion deliberately accepts both answers.
+  //
+  // `consentUpdateAlreadySent` exists so the SDK can skip an update the template
+  // has already applied. widget-client#772 (ENG-13516, merged 2026-09-01) makes it
+  // do so: loadGoogleConsentModeChoices skips the page-load update only. That is
+  // merged but NOT yet on the CDN, so whether the count is 1 or 0 depends on which
+  // bundle static.axept.io is serving on the day this runs — and this suite runs on
+  // master pushes and a weekly cron, where a red build is detached from any change
+  // of ours.
   //
   // The template's early update is invisible in the dataLayer — updateConsentState
-  // writes to GTM's consent model — so the entry counted here is the SDK's alone,
+  // writes to GTM's consent model — so an entry counted here is the SDK's alone,
   // and it is redundant with the replay the assertion just above proved happened:
   //
   //   ["consent","update",{"analytics_storage":"granted","ad_storage":"granted",
   //    "ad_user_data":"granted","ad_personalization":"granted"}]
   //
-  // Asserted as 1 because that is what happens, not as 0 because that is what we
-  // would prefer. When the SDK starts honouring the flag this fails, and the number
-  // becomes 0 in the same commit that records why.
+  // 0 is the correct outcome and 1 is the pre-#772 one. Both pass; anything else
+  // fails. This is NOT a lenient assertion in disguise — 2 would mean the skip
+  // broke and the SDK now double-sends, which is the regression worth catching.
+  //
+  // TIGHTEN THIS to .toBe(0) once the CDN serves the new bundle. Check with:
+  //   curl -s https://static.axept.io/sdk.js | grep -c consentUpdateAlreadySent
+  //
+  // Read through Playwright's request context, NOT page.evaluate(fetch(...)). A
+  // cross-origin <script> needs no CORS, which is how the SDK loads at all, but
+  // fetch() does - and static.axept.io sends no access-control-allow-origin header
+  // (checked 2026-09-01), so an in-page fetch throws and takes the whole test with
+  // it rather than answering the question. This runs in the test process instead.
   await waitForDataLayerToSettle(page);
   const updates = await gtagConsentCalls(page, 'update');
-  expect(updates.length, `gtag consent updates in dataLayer: ${JSON.stringify(updates)}`).toBe(1);
+  const bundleUrl = 'https://static.axept.io' + BUNDLE_PATHS[0];
+  const bundle = await request.get(bundleUrl);
+  expect(bundle.ok(), `could not read ${bundleUrl} to tell which SDK is deployed`).toBe(true);
+  const honoursFlag = (await bundle.text()).includes('consentUpdateAlreadySent');
+  expect(
+    updates.length,
+    `gtag consent updates in dataLayer: ${JSON.stringify(updates)} ` +
+      `(deployed bundle ${honoursFlag ? 'DOES' : 'does not'} reference consentUpdateAlreadySent)`,
+  ).toBe(honoursFlag ? 0 : 1);
 });
