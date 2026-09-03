@@ -181,3 +181,26 @@ jobs:
       - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: commitlint.config.mjs
+
+      # A `feat`/`fix` commit is a promise to publish a line to every GTM user:
+      # release-please decides the release from the type, and
+      # scripts/update-metadata-version.mjs turns that changelog section into the
+      # gallery changeNotes. Twice now the promise has been made for a change
+      # nobody installs — v2.1.6 shipped "**ci:** stop the GTM sync republishing
+      # on every run" and v2.8.0 shipped "read the deployed bundle through
+      # Playwright rather than the page", the latter from a bare `fix:` with no
+      # scope for update-metadata-version.mjs to filter on.
+      #
+      # It runs after commitlint so the subject is already known to parse.
+      #
+      # Skipped on a PR into master. That is the develop -> master promotion,
+      # which re-presents every commit already checked on develop; running again
+      # would fail the publish for a typo landed weeks earlier, when the fix is a
+      # retype on develop, not a block on the release. hotfix/* is skipped for the
+      # same reason it exists — repository infrastructure, no template change.
+      - name: Reject feat and fix commits that change nothing shipped
+        if: ${{ github.event.pull_request.base.ref != 'master' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-release-typing.mjs "$BASE_SHA..$HEAD_SHA"
